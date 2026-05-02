@@ -1,367 +1,412 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Upload, Download, Printer, Image as ImageIcon, LayoutGrid, Puzzle, Trash2, Sliders, Monitor, Smartphone, ChevronRight, RefreshCw } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>拼圖產生器 - 鄭凱文職能治療師設計</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide-react@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body { 
+            font-family: 'Noto Sans TC', sans-serif; 
+            margin: 0;
+            padding: 0;
+            background-color: #f8fafc;
+        }
+        .canvas-container canvas { 
+            max-width: 100%; 
+            height: auto !important; 
+            display: block;
+            margin: 0 auto;
+            box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+            border-radius: 0.75rem;
+        }
+        input[type="range"] { accent-color: #4f46e5; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-const App = () => {
-  // --- 狀態定義 ---
-  const [image, setImage] = useState(null);
-  
-  // 統一使用行列控制
-  const [rows, setRows] = useState(3);
-  const [cols, setCols] = useState(4);
-  
-  const [lineWidth, setLineWidth] = useState(2);
-  const [style, setStyle] = useState('irregular'); 
-  const [previewTab, setPreviewTab] = useState('puzzle'); 
-  const [isExporting, setIsExporting] = useState(false);
-  const [isJsPdfLoaded, setIsJsPdfLoaded] = useState(false);
-  const [randomSeed, setRandomSeed] = useState(0.5);
-  const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
+    <script type="text/babel">
+        /**
+         * 職能拼圖產生器 - GitHub Pages 相容版
+         * 修正項目：
+         * 1. 移除所有可能與全域保留字衝突的變數名稱 (如 Infinity)。
+         * 2. 修復 React Error #130：改用 React.createElement 安全渲染 Lucide 圖標。
+         * 3. 修正 PDF 匯出時的變數命名錯誤 (finalW vs finalWMm)。
+         */
+        (() => {
+            const { useState, useRef, useEffect, useMemo, useCallback } = React;
 
-  const canvasRef = useRef(null);
-  const fileInputRef = useRef(null);
+            // --- 安全圖標組件 ---
+            const SafeIcon = ({ name, size = 24, className = "" }) => {
+                try {
+                    const lib = window.LucideReact || {};
+                    const lucideName = name === 'ImageIcon' ? 'Image' : name;
+                    const IconComponent = lib[lucideName];
+                    
+                    if (!IconComponent) {
+                        return <span className={className} style={{ width: size, height: size, display: 'inline-block' }}></span>;
+                    }
+                    
+                    return React.createElement(IconComponent, { size, className, strokeWidth: 2 });
+                } catch (e) {
+                    return null;
+                }
+            };
 
-  // --- 輔助函式 ---
+            const App = () => {
+                const [image, setImage] = useState(null);
+                const [rows, setRows] = useState(3);
+                const [cols, setCols] = useState(4);
+                const [lineWidth, setLineWidth] = useState(2);
+                const [style, setStyle] = useState('irregular'); 
+                const [previewTab, setPreviewTab] = useState('puzzle'); 
+                const [isExporting, setIsExporting] = useState(false);
+                const [isJsPdfLoaded, setIsJsPdfLoaded] = useState(false);
+                const [randomSeed, setRandomSeed] = useState(0.5);
+                const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
 
-  const updateCanvasDimensions = useCallback((img) => {
-    const container = document.getElementById('canvas-container');
-    const maxWidth = container ? container.clientWidth : (window.innerWidth > 768 ? 800 : window.innerWidth - 40);
-    const scale = maxWidth / img.width;
-    setCanvasSize({ width: img.width * scale, height: img.height * scale });
-  }, []);
+                const canvasRef = useRef(null);
+                const fileInputRef = useRef(null);
 
-  const handleUpload = useCallback((e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-          setImage(img);
-          updateCanvasDimensions(img);
-        };
-        img.src = event.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
-  }, [updateCanvasDimensions]);
+                // 1. 載入 PDF 函式庫
+                useEffect(() => {
+                    const script = document.createElement('script');
+                    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+                    script.async = true;
+                    script.onload = () => setIsJsPdfLoaded(true);
+                    document.body.appendChild(script);
+                    return () => {
+                        if (document.body.contains(script)) document.body.removeChild(script);
+                    };
+                }, []);
 
-  // 載入 PDF 函式庫
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-    script.async = true;
-    script.onload = () => setIsJsPdfLoaded(true);
-    document.body.appendChild(script);
-    return () => {
-      if (document.body.contains(script)) document.body.removeChild(script);
-    };
-  }, []);
+                // 2. 畫布響應式尺寸計算
+                const updateCanvasDimensions = useCallback((img) => {
+                    const container = document.getElementById('canvas-container');
+                    const maxWidth = container ? container.clientWidth : (window.innerWidth > 768 ? 800 : window.innerWidth - 40);
+                    const scaleFactor = maxWidth / img.width;
+                    setCanvasSize({ width: img.width * scaleFactor, height: img.height * scaleFactor });
+                }, []);
 
-  useEffect(() => {
-    if (image) {
-      const handleResize = () => updateCanvasDimensions(image);
-      window.addEventListener('resize', handleResize);
-      return () => window.removeEventListener('resize', handleResize);
-    }
-  }, [image, updateCanvasDimensions]);
+                const handleUpload = useCallback((e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            const img = new Image();
+                            img.onload = () => {
+                                setImage(img);
+                                updateCanvasDimensions(img);
+                            };
+                            img.src = event.target.result;
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                }, [updateCanvasDimensions]);
 
-  // --- 拼圖點位計算：加入 3:1 長寬比警示與優化 ---
-  
-  const points = useMemo(() => {
-    const pts = [];
-    const jitter = style === 'irregular' ? 0.35 : 0; // 隨機斜線的擾動幅度
-    
-    for (let i = 0; i <= rows; i++) {
-      pts[i] = [];
-      for (let j = 0; j <= cols; j++) {
-        let x = j / cols;
-        let y = i / rows;
+                useEffect(() => {
+                    if (image) {
+                        const handleResize = () => updateCanvasDimensions(image);
+                        window.addEventListener('resize', handleResize);
+                        return () => window.removeEventListener('resize', handleResize);
+                    }
+                }, [image, updateCanvasDimensions]);
 
-        // 偽隨機生成函數
-        const getSeed = (a, b, offset) => {
-          const val = Math.sin(a * 17.123 + b * 23.456 + (randomSeed + offset) * 100) * 43758.5453;
-          return val - Math.floor(val);
-        };
+                // 3. 核心切割演算法
+                const points = useMemo(() => {
+                    const pts = [];
+                    const jitterVal = style === 'irregular' ? 0.35 : 0;
+                    for (let i = 0; i <= rows; i++) {
+                        pts[i] = [];
+                        for (let j = 0; j <= cols; j++) {
+                            let x = j / cols;
+                            let y = i / rows;
+                            const getSeed = (a, b, offset) => {
+                                const val = Math.sin(a * 17.123 + b * 23.456 + (randomSeed + offset) * 100) * 43758.5453;
+                                return val - Math.floor(val);
+                            };
+                            if (style === 'irregular') {
+                                if (i > 0 && i < rows && j > 0 && j < cols) {
+                                    x += (getSeed(i, j, 0) - 0.5) * (jitterVal / cols);
+                                    y += (getSeed(j, i, 0.5) - 0.5) * (jitterVal / rows);
+                                } else {
+                                    const edgeJitter = jitterVal * 0.8;
+                                    if ((i === 0 || i === rows) && j > 0 && j < cols) x += (getSeed(i, j, 0.2) - 0.5) * (edgeJitter / cols);
+                                    if ((j === 0 || j === cols) && i > 0 && i < rows) y += (getSeed(j, i, 0.7) - 0.5) * (edgeJitter / rows);
+                                }
+                            }
+                            pts[i][j] = { x, y };
+                        }
+                    }
+                    return pts;
+                }, [rows, cols, style, randomSeed]);
 
-        if (style === 'irregular') {
-          // 內部點：多向擾動產生斜角
-          if (i > 0 && i < rows && j > 0 && j < cols) {
-            x += (getSeed(i, j, 0) - 0.5) * (jitter / cols);
-            y += (getSeed(j, i, 0.5) - 0.5) * (jitter / rows);
-          } 
-          // 邊界點：在邊線上微調以改變線條切入的角度
-          else {
-            const edgeJitter = jitter * 0.8;
-            if ((i === 0 || i === rows) && j > 0 && j < cols) {
-              x += (getSeed(i, j, 0.2) - 0.5) * (edgeJitter / cols);
+                // 4. 繪製畫布內容
+                const drawLayers = useCallback((ctx, w, h, targetTab = previewTab) => {
+                    ctx.clearRect(0, 0, w, h);
+                    const isGuide = targetTab === 'guide';
+                    if (!isGuide) {
+                        if (image) ctx.drawImage(image, 0, 0, w, h);
+                    } else {
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, w, h);
+                    }
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.beginPath();
+                    ctx.strokeStyle = isGuide ? '#D1D5DB' : '#000000'; 
+                    ctx.lineWidth = lineWidth;
+                    for (let i = 0; i <= rows; i++) {
+                        for (let j = 0; j <= cols; j++) {
+                            if (j < cols) {
+                                ctx.moveTo(points[i][j].x * w, points[i][j].y * h);
+                                ctx.lineTo(points[i][j+1].x * w, points[i][j+1].y * h);
+                            }
+                            if (i < rows) {
+                                ctx.moveTo(points[i][j].x * w, points[i][j].y * h);
+                                ctx.lineTo(points[i+1][j].x * w, points[i+1][j].y * h);
+                            }
+                        }
+                    }
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#000000'; 
+                    ctx.lineWidth = lineWidth;
+                    ctx.strokeRect(0, 0, w, h);
+                }, [rows, cols, points, lineWidth, image, previewTab]);
+
+                useEffect(() => {
+                    if (!image || !canvasRef.current) return;
+                    const ctx = canvasRef.current.getContext('2d');
+                    drawLayers(ctx, canvasSize.width, canvasSize.height);
+                }, [image, canvasSize, previewTab, drawLayers]);
+
+                // 5. PDF 匯出 (原比例保持與標題添加)
+                const exportPDF = async (exportMode) => {
+                    if (!image || !isJsPdfLoaded) return;
+                    setIsExporting(true);
+                    try {
+                        const { jsPDF } = window.jspdf;
+                        const isImgLandscape = image.width > image.height;
+                        const pdfDoc = new jsPDF({
+                            orientation: isImgLandscape ? 'landscape' : 'portrait',
+                            unit: 'mm',
+                            format: 'a4'
+                        });
+                        
+                        const pdfPageWidth = pdfDoc.internal.pageSize.getWidth();
+                        const pdfPageHeight = pdfDoc.internal.pageSize.getHeight();
+                        const safeMargin = 15;
+                        const headerAreaHeight = 12;
+                        const printableW = pdfPageWidth - (safeMargin * 2);
+                        const printableH = pdfPageHeight - (safeMargin * 2) - headerAreaHeight;
+
+                        const scaleRatio = Math.min(printableW / image.width, printableH / image.height);
+                        const finalWMm = image.width * scaleRatio;
+                        const finalHMm = image.height * scaleRatio;
+                        const xOffsetMm = (pdfPageWidth - finalWMm) / 2;
+                        const yOffsetMm = safeMargin + headerAreaHeight + (printableH - finalHMm) / 2;
+
+                        const renderToImageString = (type, pageLabel) => {
+                            const quality = 2; 
+                            const labelSpace = 35;
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = image.width * quality;
+                            tempCanvas.height = (image.height + labelSpace) * quality;
+                            const tctx = tempCanvas.getContext('2d');
+                            
+                            tctx.fillStyle = '#ffffff';
+                            tctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                            tctx.fillStyle = '#1e293b';
+                            tctx.font = `bold ${20 * quality}px sans-serif`;
+                            tctx.textAlign = 'center';
+                            tctx.fillText(pageLabel, tempCanvas.width / 2, 22 * quality);
+                            
+                            tctx.save();
+                            tctx.translate(0, labelSpace * quality);
+                            tctx.scale(quality, quality);
+                            drawLayers(tctx, image.width, image.height, type);
+                            tctx.restore();
+                            
+                            return tempCanvas.toDataURL('image/jpeg', 0.95);
+                        };
+
+                        if (exportMode === 'both' || exportMode === 'puzzle') {
+                            const puzzleImgStr = renderToImageString('puzzle', '第一頁：拼圖訓練頁面 (Puzzle Page)');
+                            pdfDoc.addImage(puzzleImgStr, 'JPEG', xOffsetMm, yOffsetMm - headerAreaHeight, finalWMm, finalHMm + headerAreaHeight);
+                            if (exportMode === 'both') pdfDoc.addPage();
+                        }
+                        if (exportMode === 'both' || exportMode === 'guide') {
+                            const guideImgStr = renderToImageString('guide', '第二頁：引導底圖頁面 (Guide Page)');
+                            pdfDoc.addImage(guideImgStr, 'JPEG', xOffsetMm, yOffsetMm - headerAreaHeight, finalWMm, finalHMm + headerAreaHeight);
+                        }
+                        pdfDoc.save(`職能拼圖_${cols}x${rows}_${new Date().getTime()}.pdf`);
+                    } catch (err) { 
+                        console.error("PDF Export Error:", err); 
+                    } finally { 
+                        setIsExporting(false); 
+                    }
+                };
+
+                const pieceRatio = useMemo(() => {
+                    if (!image) return 1;
+                    const pW = image.width / cols;
+                    const pH = image.height / rows;
+                    return Math.max(pW/pH, pH/pW);
+                }, [image, rows, cols]);
+
+                return (
+                    <div className="min-h-screen flex flex-col lg:flex-row">
+                        {/* 控制面板 */}
+                        <aside className="w-full lg:w-96 bg-white border-b lg:border-r border-slate-200 p-6 flex flex-col gap-6 shadow-sm overflow-y-auto lg:h-screen">
+                            <div className="flex items-center gap-3 border-b pb-4">
+                                <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-100 text-white flex items-center justify-center">
+                                    <SafeIcon name="Puzzle" size={24} />
+                                </div>
+                                <div>
+                                    <h1 className="font-bold text-xl tracking-tight text-slate-900 leading-tight">職能拼圖系統</h1>
+                                    <p className="text-xs text-slate-500 font-medium tracking-wide uppercase">OT Designer Tool</p>
+                                </div>
+                            </div>
+
+                            <section>
+                                <div className="flex justify-between items-center mb-3">
+                                    <label className="text-sm font-bold text-slate-700">1. 上傳訓練素材</label>
+                                    {image && <button onClick={() => setImage(null)} className="text-xs text-red-500 hover:underline flex items-center gap-1"><SafeIcon name="Trash2" size={12}/> 清除</button>}
+                                </div>
+                                {!image ? (
+                                    <div onClick={() => fileInputRef.current.click()} className="border-2 border-dashed border-slate-200 rounded-2xl p-10 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-all group">
+                                        <SafeIcon name="Upload" size={32} className="text-slate-400 group-hover:text-indigo-600 transition-colors" />
+                                        <span className="text-xs text-slate-500 font-bold">點擊上傳圖片檔案</span>
+                                    </div>
+                                ) : (
+                                    <div className="rounded-xl overflow-hidden border border-slate-200 p-1 bg-slate-50 shadow-inner group relative">
+                                        <img src={image.src} className="w-full h-24 object-cover rounded-lg" alt="Upload" />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <button onClick={() => fileInputRef.current.click()} className="bg-white text-xs font-bold py-1.5 px-3 rounded-full shadow-lg">更換圖片</button>
+                                        </div>
+                                    </div>
+                                )}
+                                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+                            </section>
+
+                            <section className="bg-slate-50/80 p-5 rounded-2xl border border-slate-100 flex flex-col gap-5">
+                                <div className="flex justify-between items-center">
+                                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                        <SafeIcon name="Sliders" size={16} /> 2. 規格與片數
+                                    </label>
+                                    {style === 'irregular' && (
+                                        <button onClick={() => setRandomSeed(Math.random())} className="text-indigo-600 hover:rotate-180 transition-transform duration-500 p-2 bg-white rounded-full shadow-sm">
+                                            <SafeIcon name="RefreshCw" size={18} />
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="space-y-6">
+                                    <div className="flex gap-2 p-1 bg-white rounded-xl border border-slate-200 shadow-sm">
+                                        <button onClick={() => setStyle('grid')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${style === 'grid' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>標準網格</button>
+                                        <button onClick={() => setStyle('irregular')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${style === 'irregular' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>隨機斜線</button>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <span className="text-xs font-bold text-slate-500 uppercase">橫向片數 (Cols): {cols}</span>
+                                            <input type="range" min="1" max="15" value={cols} onChange={(e) => setCols(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600 rounded-lg cursor-pointer" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <span className="text-xs font-bold text-slate-500 uppercase">縱向片數 (Rows): {rows}</span>
+                                            <input type="range" min="1" max="15" value={rows} onChange={(e) => setRows(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600 rounded-lg cursor-pointer" />
+                                        </div>
+                                        <div className={`p-3 rounded-xl border text-center transition-colors ${pieceRatio > 3 ? 'bg-amber-50 border-amber-200' : 'bg-indigo-50 border-indigo-100'}`}>
+                                            <p className={`text-xs font-bold ${pieceRatio > 3 ? 'text-amber-600' : 'text-indigo-600'}`}>目前：{cols} x {rows} = {cols * rows} 片</p>
+                                            {pieceRatio > 3 && <p className="text-[10px] text-amber-500 mt-1 font-medium italic">提示：塊狀目前較細長 (建議調整比例)</p>}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                                        <span className="text-xs font-bold text-slate-500">切割線粗細: {lineWidth}px</span>
+                                        <input type="range" min="1" max="10" value={lineWidth} onChange={(e) => setLineWidth(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600" />
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section className="lg:mt-auto pt-4 flex flex-col gap-3">
+                                <button disabled={!image || isExporting} onClick={() => exportPDF('both')} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-lg active:scale-95 disabled:bg-slate-200">
+                                    <SafeIcon name="Download" size={20} /> 下載 A4 PDF (含拼圖及底圖)
+                                </button>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button disabled={!image || isExporting} onClick={() => exportPDF('puzzle')} className="text-xs bg-white border border-slate-200 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-50 shadow-sm transition-colors">單印拼圖</button>
+                                    <button disabled={!image || isExporting} onClick={() => exportPDF('guide')} className="text-xs bg-white border border-slate-200 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-50 shadow-sm transition-colors">單印底圖</button>
+                                </div>
+                            </section>
+
+                            <footer className="mt-6 pt-4 border-t border-slate-100 text-center">
+                                <p className="text-xs text-slate-400 font-medium">
+                                    設計：<a href="https://www.facebook.com/mpotkevin" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 transition-colors underline decoration-dotted underline-offset-4">職能治療師 - 鄭凱文</a>
+                                </p>
+                            </footer>
+                        </aside>
+
+                        {/* 主內容區塊 */}
+                        <main className="flex-1 p-4 md:p-8 flex flex-col items-center justify-start lg:justify-center overflow-hidden">
+                            {image ? (
+                                <div className="w-full max-w-4xl flex flex-col gap-6 items-center">
+                                    <div className="bg-slate-200 p-1.5 rounded-2xl flex w-full max-w-sm shadow-inner">
+                                        <button onClick={() => setPreviewTab('puzzle')} className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${previewTab === 'puzzle' ? 'bg-white shadow-md text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>拼圖預覽</button>
+                                        <button onClick={() => setPreviewTab('guide')} className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${previewTab === 'guide' ? 'bg-white shadow-md text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>引導底圖</button>
+                                    </div>
+                                    <div id="canvas-container" className="w-full relative group">
+                                        <div className="relative shadow-2xl rounded-2xl overflow-hidden bg-white border-[12px] border-white mx-auto transition-all duration-500">
+                                            <canvas ref={canvasRef} width={canvasSize.width} height={canvasSize.height} className="max-w-full h-auto block mx-auto" />
+                                            {isExporting && (
+                                                <div className="absolute inset-0 bg-white/90 backdrop-blur-md flex flex-col items-center justify-center gap-4 z-20 animate-pulse">
+                                                    <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                                                    <p className="font-black text-indigo-600 text-lg">正在生成 PDF...</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-6 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                                        <span className="flex items-center gap-1.5 bg-white px-2 py-1 rounded border shadow-sm"><SafeIcon name="Printer" size={12} /> A4 Print Ready</span>
+                                        <span className="flex items-center gap-1.5 bg-white px-2 py-1 rounded border shadow-sm"><SafeIcon name="Monitor" size={12} /> Desktop Mode</span>
+                                        <span className="flex items-center gap-1.5 bg-white px-2 py-1 rounded border shadow-sm"><SafeIcon name="Smartphone" size={12} /> Mobile Ready</span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-center py-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                                    <div className="w-32 h-32 bg-indigo-50 rounded-[3rem] flex items-center justify-center text-indigo-600 mx-auto mb-10 shadow-inner group">
+                                        <SafeIcon name="ImageIcon" size={64} className="group-hover:scale-110 transition-transform duration-500" />
+                                    </div>
+                                    <h2 className="text-4xl font-black text-slate-900 tracking-tight">設計客製化拼圖輔具</h2>
+                                    <p className="text-slate-600 mt-5 text-base max-w-sm mx-auto leading-relaxed font-medium">支援原比例下載，提供標準網格與不規則斜線兩種模式。<br/>PDF 將自動標註「拼圖」與「底圖」頁面標題。</p>
+                                    <button onClick={() => fileInputRef.current.click()} className="mt-12 bg-indigo-600 text-white px-12 py-5 rounded-[2rem] font-bold flex items-center gap-3 mx-auto hover:bg-indigo-700 hover:shadow-2xl transition-all shadow-xl shadow-indigo-100 ring-4 ring-white">
+                                        立即選取圖片 <SafeIcon name="ChevronRight" size={22} />
+                                    </button>
+                                </div>
+                            )}
+                        </main>
+                    </div>
+                );
+            };
+
+            const rootElement = document.getElementById('root');
+            if (rootElement) {
+                const root = ReactDOM.createRoot(rootElement);
+                root.render(React.createElement(App));
             }
-            if ((j === 0 || j === cols) && i > 0 && i < rows) {
-              y += (getSeed(j, i, 0.7) - 0.5) * (edgeJitter / rows);
-            }
-          }
-        }
-        pts[i][j] = { x, y };
-      }
-    }
-    return pts;
-  }, [rows, cols, style, randomSeed]);
-
-  // --- 繪圖邏輯 ---
-
-  const drawLayers = useCallback((ctx, w, h, targetTab = previewTab) => {
-    ctx.clearRect(0, 0, w, h);
-    const isGuide = targetTab === 'guide';
-
-    if (!isGuide) {
-      if (image) ctx.drawImage(image, 0, 0, w, h);
-    } else {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, w, h);
-    }
-
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.strokeStyle = isGuide ? '#D1D5DB' : '#000000'; 
-    ctx.lineWidth = lineWidth;
-
-    // 繪製格線
-    for (let i = 0; i <= rows; i++) {
-      for (let j = 0; j <= cols; j++) {
-        // 橫線
-        if (j < cols) {
-          ctx.moveTo(points[i][j].x * w, points[i][j].y * h);
-          ctx.lineTo(points[i][j+1].x * w, points[i][j+1].y * h);
-        }
-        // 縱線
-        if (i < rows) {
-          ctx.moveTo(points[i][j].x * w, points[i][j].y * h);
-          ctx.lineTo(points[i+1][j].x * w, points[i+1][j].y * h);
-        }
-      }
-    }
-    ctx.stroke();
-
-    // 繪製黑色外框 (確保對齊)
-    ctx.beginPath();
-    ctx.strokeStyle = '#000000'; 
-    ctx.lineWidth = lineWidth;
-    ctx.strokeRect(0, 0, w, h);
-  }, [rows, cols, points, lineWidth, image, previewTab]);
-
-  useEffect(() => {
-    if (!image || !canvasRef.current) return;
-    const ctx = canvasRef.current.getContext('2d');
-    drawLayers(ctx, canvasSize.width, canvasSize.height);
-  }, [image, canvasSize, previewTab, drawLayers]);
-
-  // --- PDF 匯出 ---
-
-  const exportPDF = async (mode) => {
-    if (!image || !isJsPdfLoaded) return;
-    setIsExporting(true);
-
-    try {
-      const { jsPDF } = window.jspdf;
-      const isLandscape = image.width > image.height;
-      const doc = new jsPDF({
-        orientation: isLandscape ? 'landscape' : 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
-
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 15;
-      const titleAreaHeight = 12;
-      const availableW = pageWidth - (margin * 2);
-      const availableH = pageHeight - (margin * 2) - titleAreaHeight;
-
-      const scale = Math.min(availableW / image.width, availableH / image.height);
-      const finalW = image.width * scale;
-      const finalH = image.height * scale;
-
-      const xPos = (pageWidth - finalW) / 2;
-      const yPos = margin + titleAreaHeight + (availableH - finalH) / 2;
-
-      const renderWithTitleToData = (type, pageTitle) => {
-        const qualityScale = 2;
-        const titlePx = 30;
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = image.width * qualityScale;
-        tempCanvas.height = (image.height + titlePx) * qualityScale;
-        const tctx = tempCanvas.getContext('2d');
-        tctx.fillStyle = '#ffffff';
-        tctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-        tctx.fillStyle = '#1e293b';
-        tctx.font = `bold ${18 * qualityScale}px sans-serif`;
-        tctx.textAlign = 'center';
-        tctx.fillText(pageTitle, tempCanvas.width / 2, 20 * qualityScale);
-        tctx.save();
-        tctx.translate(0, titlePx * qualityScale);
-        tctx.scale(qualityScale, qualityScale);
-        drawLayers(tctx, image.width, image.height, type);
-        tctx.restore();
-        return tempCanvas.toDataURL('image/jpeg', 0.95);
-      };
-
-      if (mode === 'both' || mode === 'puzzle') {
-        const puzzleImg = renderWithTitleToData('puzzle', '第一頁：拼圖訓練頁面 (Puzzle Page)');
-        doc.addImage(puzzleImg, 'JPEG', xPos, yPos - titleAreaHeight, finalW, finalH + titleAreaHeight);
-        if (mode === 'both') doc.addPage();
-      }
-      if (mode === 'both' || mode === 'guide') {
-        const guideImg = renderWithTitleToData('guide', '第二頁：底圖引導頁面 (Guide Page)');
-        doc.addImage(guideImg, 'JPEG', xPos, yPos - titleAreaHeight, finalW, finalH + titleAreaHeight);
-      }
-
-      doc.save(`職能拼圖_${cols}x${rows}_${new Date().getTime()}.pdf`);
-    } catch (err) { console.error(err); }
-    finally { setIsExporting(false); }
-  };
-
-  // 比例警示
-  const pieceRatio = useMemo(() => {
-    if (!image) return 1;
-    const pW = image.width / cols;
-    const pH = image.height / rows;
-    return Math.max(pW/pH, pH/pW);
-  }, [image, rows, cols]);
-
-  return (
-    <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row font-sans text-slate-800">
-      <aside className="w-full lg:w-96 bg-white border-b lg:border-r border-slate-200 p-6 flex flex-col gap-6 shadow-sm overflow-y-auto lg:h-screen">
-        <div className="flex items-center gap-3 border-b pb-4">
-          <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-100"><Puzzle className="text-white" size={24} /></div>
-          <div><h1 className="font-bold text-xl tracking-tight text-slate-900 leading-tight">職能拼圖系統</h1><p className="text-xs text-slate-500 font-medium tracking-wide uppercase">OT Designer Tool</p></div>
-        </div>
-
-        <section>
-          <div className="flex justify-between items-center mb-3">
-            <label className="text-sm font-bold text-slate-700">1. 上傳訓練素材</label>
-            {image && <button onClick={() => setImage(null)} className="text-xs text-red-500 hover:underline">清除</button>}
-          </div>
-          {!image ? (
-            <div onClick={() => fileInputRef.current.click()} className="border-2 border-dashed border-slate-200 rounded-2xl p-10 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-all group">
-              <Upload className="text-slate-400 group-hover:text-indigo-600" size={32} />
-              <span className="text-xs text-slate-500 font-bold">選取圖片</span>
-            </div>
-          ) : (
-            <div className="rounded-xl overflow-hidden border border-slate-200 p-1 bg-slate-50 shadow-inner">
-              <img src={image.src} className="w-full h-24 object-cover rounded-lg" alt="Upload preview" />
-            </div>
-          )}
-          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
-        </section>
-
-        <section className="bg-slate-50/80 p-5 rounded-2xl border border-slate-100 flex flex-col gap-5">
-          <div className="flex justify-between items-center">
-            <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><Sliders size={16} /> 2. 規格與片數</label>
-            {style === 'irregular' && (
-              <button onClick={() => setRandomSeed(Math.random())} className="text-indigo-600 hover:rotate-180 transition-transform duration-500 p-2 bg-white rounded-full shadow-sm" title="更換隨機斜角">
-                <RefreshCw size={18} />
-              </button>
-            )}
-          </div>
-
-          <div className="space-y-6">
-            <div className="flex gap-2 p-1 bg-white rounded-xl border border-slate-200 shadow-sm">
-              <button onClick={() => setStyle('grid')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${style === 'grid' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>標準網格</button>
-              <button onClick={() => setStyle('irregular')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${style === 'irregular' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>隨機斜線</button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex justify-between"><span className="text-xs font-bold text-slate-500 uppercase">橫向片數 (Cols): {cols}</span></div>
-                <input type="range" min="1" max="15" value={cols} onChange={(e) => setCols(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600 rounded-lg cursor-pointer" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between"><span className="text-xs font-bold text-slate-500 uppercase">縱向片數 (Rows): {rows}</span></div>
-                <input type="range" min="1" max="15" value={rows} onChange={(e) => setRows(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600 rounded-lg cursor-pointer" />
-              </div>
-              <div className={`p-3 rounded-xl border text-center transition-colors ${pieceRatio > 3 ? 'bg-amber-50 border-amber-200' : 'bg-indigo-50 border-indigo-100'}`}>
-                <p className={`text-xs font-bold ${pieceRatio > 3 ? 'text-amber-600' : 'text-indigo-600'}`}>
-                  目前：{cols} x {rows} = {cols * rows} 片
-                </p>
-                {pieceRatio > 3 && <p className="text-[10px] text-amber-500 mt-1 font-medium italic">提示：拼圖塊目前較為細長</p>}
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-2 border-t border-slate-100">
-              <span className="text-xs font-bold text-slate-500">切割線粗細: {lineWidth}px</span>
-              <input type="range" min="1" max="10" value={lineWidth} onChange={(e) => setLineWidth(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600" />
-            </div>
-          </div>
-        </section>
-
-        <section className="lg:mt-auto pt-4 flex flex-col gap-3">
-          <button disabled={!image || isExporting} onClick={() => exportPDF('both')} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-lg active:scale-95 disabled:bg-slate-200">
-            <Download size={20} /> 下載 A4 PDF (含拼圖及底圖)
-          </button>
-          <div className="grid grid-cols-2 gap-2">
-            <button disabled={!image || isExporting} onClick={() => exportPDF('puzzle')} className="text-xs bg-white border border-slate-200 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-50 shadow-sm transition-colors">單印拼圖頁</button>
-            <button disabled={!image || isExporting} onClick={() => exportPDF('guide')} className="text-xs bg-white border border-slate-200 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-50 shadow-sm transition-colors">單印底圖頁</button>
-          </div>
-        </section>
-
-        {/* 頁尾署名與連結 */}
-        <footer className="mt-8 pt-4 border-t border-slate-100 text-center">
-          <p className="text-xs text-slate-400 font-medium">
-            設計：<a 
-              href="https://www.facebook.com/mpotkevin" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="hover:text-indigo-600 transition-colors underline decoration-dotted underline-offset-4"
-            >
-              職能治療師 - 鄭凱文
-            </a>
-          </p>
-        </footer>
-      </aside>
-
-      <main className="flex-1 p-4 md:p-8 flex flex-col items-center justify-start lg:justify-center overflow-hidden">
-        {image ? (
-          <div className="w-full max-w-4xl flex flex-col gap-6 items-center">
-            <div className="bg-slate-200 p-1.5 rounded-2xl flex w-full max-w-sm shadow-inner">
-              <button onClick={() => setPreviewTab('puzzle')} className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${previewTab === 'puzzle' ? 'bg-white shadow-md text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>拼圖預覽</button>
-              <button onClick={() => setPreviewTab('guide')} className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${previewTab === 'guide' ? 'bg-white shadow-md text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>引導底圖</button>
-            </div>
-            <div id="canvas-container" className="w-full relative group">
-              <div className="relative shadow-2xl rounded-2xl overflow-hidden bg-white border-[12px] border-white mx-auto transition-all duration-500 ease-in-out">
-                <canvas ref={canvasRef} width={canvasSize.width} height={canvasSize.height} className="max-w-full h-auto block mx-auto" />
-                {isExporting && (
-                  <div className="absolute inset-0 bg-white/90 backdrop-blur-md flex flex-col items-center justify-center gap-4 z-20 animate-pulse">
-                    <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="font-black text-indigo-600 text-lg">正在生成原比例 PDF...</p>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <div className="flex gap-6 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                <span className="flex items-center gap-1.5"><Printer size={12} /> A4 Print Ready</span>
-                <span className="flex items-center gap-1.5"><Monitor size={12} /> Desktop Mode</span>
-                <span className="flex items-center gap-1.5"><Smartphone size={12} /> Mobile Ready</span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-center py-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="w-32 h-32 bg-indigo-50 rounded-[3rem] flex items-center justify-center text-indigo-600 mx-auto mb-10 shadow-inner group cursor-pointer hover:bg-indigo-100 transition-colors">
-              <ImageIcon size={64} className="group-hover:scale-110 transition-transform duration-500" />
-            </div>
-            <h2 className="text-4xl font-black text-slate-900 tracking-tight">設計客製化拼圖輔具</h2>
-            <p className="text-slate-600 mt-5 text-base max-w-sm mx-auto leading-relaxed font-medium">
-              支援原比例不失真下載，<br/>提供標準網格與不規則斜線兩種訓練模式。
-            </p>
-            <button onClick={() => fileInputRef.current.click()} className="mt-12 bg-indigo-600 text-white px-12 py-5 rounded-[2rem] font-bold flex items-center gap-3 mx-auto hover:bg-indigo-700 hover:shadow-2xl transition-all shadow-xl shadow-indigo-100">
-              立即選取圖片 <ChevronRight size={22} />
-            </button>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-};
-
-export default App;
+        })();
+    </script>
+</body>
+</html>
