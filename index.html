@@ -11,9 +11,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <!-- Babel for JSX -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-    <!-- Lucide Icons -->
+    <!-- Lucide Icons - 修正載入順序與來源 -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://unpkg.com/lucide-react@latest"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
         body { 
@@ -41,31 +40,35 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        /**
-         * 職能拼圖產生器 - GitHub Pages 相容版
-         * 修正項目：
-         * 1. 移除所有可能與全域保留字衝突的變數名稱 (如 Infinity)。
-         * 2. 修復 React Error #130：改用 React.createElement 安全渲染 Lucide 圖標。
-         * 3. 修正 PDF 匯出時的變數命名錯誤 (finalW vs finalWMm)。
-         */
         (() => {
             const { useState, useRef, useEffect, useMemo, useCallback } = React;
 
-            // --- 安全圖標組件 ---
+            // --- 修正後的安全圖標組件 ---
+            // 直接使用 lucide.createSvg 以確保在所有環境下都能運作
             const SafeIcon = ({ name, size = 24, className = "" }) => {
-                try {
-                    const lib = window.LucideReact || {};
-                    const lucideName = name === 'ImageIcon' ? 'Image' : name;
-                    const IconComponent = lib[lucideName];
-                    
-                    if (!IconComponent) {
-                        return <span className={className} style={{ width: size, height: size, display: 'inline-block' }}></span>;
+                const iconRef = useRef(null);
+
+                useEffect(() => {
+                    if (window.lucide && iconRef.current) {
+                        // 清除舊的 icon
+                        iconRef.current.innerHTML = '';
+                        // 轉換名稱：Puzzle -> puzzle
+                        const lucideName = name.charAt(0).toLowerCase() + name.slice(1);
+                        const iconData = window.lucide.icons[lucideName] || window.lucide.icons['image'];
+                        
+                        if (iconData) {
+                            const svg = window.lucide.createSvg(iconData, {
+                                width: size,
+                                height: size,
+                                class: className,
+                                'stroke-width': 2
+                            });
+                            iconRef.current.appendChild(svg);
+                        }
                     }
-                    
-                    return React.createElement(IconComponent, { size, className, strokeWidth: 2 });
-                } catch (e) {
-                    return null;
-                }
+                }, [name, size, className]);
+
+                return <span ref={iconRef} className={`inline-flex items-center justify-center ${className}`} style={{ width: size, height: size }}></span>;
             };
 
             const App = () => {
@@ -83,19 +86,14 @@
                 const canvasRef = useRef(null);
                 const fileInputRef = useRef(null);
 
-                // 1. 載入 PDF 函式庫
                 useEffect(() => {
                     const script = document.createElement('script');
                     script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
                     script.async = true;
                     script.onload = () => setIsJsPdfLoaded(true);
                     document.body.appendChild(script);
-                    return () => {
-                        if (document.body.contains(script)) document.body.removeChild(script);
-                    };
                 }, []);
 
-                // 2. 畫布響應式尺寸計算
                 const updateCanvasDimensions = useCallback((img) => {
                     const container = document.getElementById('canvas-container');
                     const maxWidth = container ? container.clientWidth : (window.innerWidth > 768 ? 800 : window.innerWidth - 40);
@@ -127,7 +125,6 @@
                     }
                 }, [image, updateCanvasDimensions]);
 
-                // 3. 核心切割演算法
                 const points = useMemo(() => {
                     const pts = [];
                     const jitterVal = style === 'irregular' ? 0.35 : 0;
@@ -156,7 +153,6 @@
                     return pts;
                 }, [rows, cols, style, randomSeed]);
 
-                // 4. 繪製畫布內容
                 const drawLayers = useCallback((ctx, w, h, targetTab = previewTab) => {
                     ctx.clearRect(0, 0, w, h);
                     const isGuide = targetTab === 'guide';
@@ -196,7 +192,6 @@
                     drawLayers(ctx, canvasSize.width, canvasSize.height);
                 }, [image, canvasSize, previewTab, drawLayers]);
 
-                // 5. PDF 匯出 (原比例保持與標題添加)
                 const exportPDF = async (exportMode) => {
                     if (!image || !isJsPdfLoaded) return;
                     setIsExporting(true);
@@ -272,7 +267,6 @@
 
                 return (
                     <div className="min-h-screen flex flex-col lg:flex-row">
-                        {/* 控制面板 */}
                         <aside className="w-full lg:w-96 bg-white border-b lg:border-r border-slate-200 p-6 flex flex-col gap-6 shadow-sm overflow-y-auto lg:h-screen">
                             <div className="flex items-center gap-3 border-b pb-4">
                                 <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-100 text-white flex items-center justify-center">
@@ -323,16 +317,15 @@
                                     </div>
                                     <div className="space-y-4">
                                         <div className="space-y-2">
-                                            <span className="text-xs font-bold text-slate-500 uppercase">橫向片數 (Cols): {cols}</span>
+                                            <span className="text-xs font-bold text-slate-500 uppercase">橫向片數: {cols}</span>
                                             <input type="range" min="1" max="15" value={cols} onChange={(e) => setCols(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600 rounded-lg cursor-pointer" />
                                         </div>
                                         <div className="space-y-2">
-                                            <span className="text-xs font-bold text-slate-500 uppercase">縱向片數 (Rows): {rows}</span>
+                                            <span className="text-xs font-bold text-slate-500 uppercase">縱向片數: {rows}</span>
                                             <input type="range" min="1" max="15" value={rows} onChange={(e) => setRows(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600 rounded-lg cursor-pointer" />
                                         </div>
                                         <div className={`p-3 rounded-xl border text-center transition-colors ${pieceRatio > 3 ? 'bg-amber-50 border-amber-200' : 'bg-indigo-50 border-indigo-100'}`}>
                                             <p className={`text-xs font-bold ${pieceRatio > 3 ? 'text-amber-600' : 'text-indigo-600'}`}>目前：{cols} x {rows} = {cols * rows} 片</p>
-                                            {pieceRatio > 3 && <p className="text-[10px] text-amber-500 mt-1 font-medium italic">提示：塊狀目前較細長 (建議調整比例)</p>}
                                         </div>
                                     </div>
                                     <div className="space-y-2 pt-2 border-t border-slate-100">
@@ -359,7 +352,6 @@
                             </footer>
                         </aside>
 
-                        {/* 主內容區塊 */}
                         <main className="flex-1 p-4 md:p-8 flex flex-col items-center justify-start lg:justify-center overflow-hidden">
                             {image ? (
                                 <div className="w-full max-w-4xl flex flex-col gap-6 items-center">
@@ -387,10 +379,10 @@
                             ) : (
                                 <div className="text-center py-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
                                     <div className="w-32 h-32 bg-indigo-50 rounded-[3rem] flex items-center justify-center text-indigo-600 mx-auto mb-10 shadow-inner group">
-                                        <SafeIcon name="ImageIcon" size={64} className="group-hover:scale-110 transition-transform duration-500" />
+                                        <SafeIcon name="Image" size={64} className="group-hover:scale-110 transition-transform duration-500" />
                                     </div>
                                     <h2 className="text-4xl font-black text-slate-900 tracking-tight">設計客製化拼圖輔具</h2>
-                                    <p className="text-slate-600 mt-5 text-base max-w-sm mx-auto leading-relaxed font-medium">支援原比例下載，提供標準網格與不規則斜線兩種模式。<br/>PDF 將自動標註「拼圖」與「底圖」頁面標題。</p>
+                                    <p className="text-slate-600 mt-5 text-base max-w-sm mx-auto leading-relaxed font-medium">支援原比例下載，提供標準網格與隨機斜線兩種模式。</p>
                                     <button onClick={() => fileInputRef.current.click()} className="mt-12 bg-indigo-600 text-white px-12 py-5 rounded-[2rem] font-bold flex items-center gap-3 mx-auto hover:bg-indigo-700 hover:shadow-2xl transition-all shadow-xl shadow-indigo-100 ring-4 ring-white">
                                         立即選取圖片 <SafeIcon name="ChevronRight" size={22} />
                                     </button>
