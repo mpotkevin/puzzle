@@ -24,11 +24,11 @@
             background-color: #f1f5f9;
             color: #0f172a;
             -webkit-tap-highlight-color: transparent;
-            overflow: hidden; /* 防止電腦版主頁面捲動 */
+            overflow: hidden; 
         }
 
         @media (max-width: 1024px) {
-            body { overflow: auto; } /* 手機版允許捲動 */
+            body { overflow: auto; } 
         }
 
         .custom-shadow {
@@ -54,10 +54,14 @@
             transition: all 0.2s;
         }
 
-        /* 側邊欄捲動條 */
-        aside::-webkit-scrollbar { width: 6px; }
-        aside::-webkit-scrollbar-track { background: transparent; }
-        aside::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        /* 側邊欄過渡動畫 */
+        .sidebar-transition {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* 隱藏捲動條但保持功能 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body>
@@ -66,9 +70,6 @@
     <script type="text/babel">
         const { useState, useRef, useEffect, useMemo, useCallback } = React;
 
-        /**
-         * 修正後的圖標組件 - 增加 margin 且調整 viewBox 確保不被裁切
-         */
         const Icon = ({ name, size = 24, className = "" }) => {
             const icons = {
                 puzzle: <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />,
@@ -81,14 +82,17 @@
                 trash: <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />,
                 chevronDown: <path d="M6 9l6 6 6-6" />,
                 chevronUp: <path d="M18 15l-6-6-6 6" />,
-                file: <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6" />
+                chevronLeft: <path d="M15 18l-6-6 6-6" />,
+                chevronRight: <path d="M9 18l6-6-6-6" />,
+                file: <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6" />,
+                external: <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
             };
 
             return (
                 <div className={`inline-flex items-center justify-center ${className}`} style={{ width: size, height: size }}>
                     <svg
-                        width="90%"
-                        height="90%"
+                        width="100%"
+                        height="100%"
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"
@@ -113,6 +117,7 @@
             const [isExporting, setIsExporting] = useState(false);
             const [isJsPdfLoaded, setIsJsPdfLoaded] = useState(false);
             const [isSettingsOpen, setIsSettingsOpen] = useState(true);
+            const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
             const [randomSeed, setRandomSeed] = useState(Math.random());
             const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
 
@@ -133,7 +138,7 @@
                 if (!container) return;
                 
                 const availableW = container.clientWidth - 48;
-                const availableH = container.clientHeight - 160; 
+                const availableH = container.clientHeight - 180; 
                 
                 const ratio = img.height / img.width;
                 let finalW = availableW;
@@ -156,7 +161,7 @@
                         window.removeEventListener('resize', () => updateDimensions(image));
                     };
                 }
-            }, [image, updateDimensions]);
+            }, [image, updateDimensions, isSidebarCollapsed]);
 
             const handleUpload = (e) => {
                 const file = e.target.files[0];
@@ -241,13 +246,14 @@
                 }
             }, [image, canvasSize, previewTab, draw]);
 
-            /**
-             * PDF 匯出核心功能
-             * 使用畫布預渲染標題，解決中文字型亂碼問題
-             */
             const exportPDF = async (mode) => {
                 if (!image || !isJsPdfLoaded) return;
                 setIsExporting(true);
+                
+                // 動態判斷解析度，手機版降低以確保不崩潰空白
+                const isMobile = window.innerWidth < 768;
+                const q = isMobile ? 1.5 : 3;
+
                 setTimeout(() => {
                     try {
                         const { jsPDF } = window.jspdf;
@@ -259,42 +265,35 @@
                         
                         const drawPage = (type, titleText) => {
                             const temp = document.createElement('canvas');
-                            const q = 3; // 高品質渲染
-                            const titleHeightPx = 60 * q; // 預留給標題的高度
+                            const titleHeightPx = 60 * q; 
                             
                             temp.width = image.width * q;
                             temp.height = (image.height * q) + titleHeightPx;
                             
                             const tctx = temp.getContext('2d');
-                            
-                            // 1. 填滿白色底
                             tctx.fillStyle = '#ffffff';
                             tctx.fillRect(0, 0, temp.width, temp.height);
                             
-                            // 2. 繪製中文標題 (避免 PDF 亂碼)
                             tctx.fillStyle = '#000000';
-                            tctx.font = `bold ${24 * q}px "Noto Sans TC", sans-serif`;
+                            tctx.font = `bold ${22 * q}px "Noto Sans TC", sans-serif`;
                             tctx.textAlign = 'center';
                             tctx.textBaseline = 'middle';
                             tctx.fillText(titleText, temp.width / 2, titleHeightPx / 2);
                             
-                            // 3. 繪製拼圖/底圖內容
                             tctx.save();
                             tctx.translate(0, titleHeightPx);
                             draw(tctx, image.width * q, image.height * q, type);
                             tctx.restore();
                             
-                            // 4. 計算在 PDF 上的尺寸
                             const pdfAvailableW = pw - margin * 2;
                             const pdfAvailableH = ph - margin * 2;
-                            
                             const ratio = Math.min(pdfAvailableW / temp.width, pdfAvailableH / temp.height);
                             const finalW = temp.width * ratio;
                             const finalH = temp.height * ratio;
                             const x = (pw - finalW) / 2;
                             const y = (ph - finalH) / 2;
                             
-                            pdf.addImage(temp.toDataURL('image/jpeg', 0.95), 'JPEG', x, y, finalW, finalH);
+                            pdf.addImage(temp.toDataURL('image/jpeg', 0.9), 'JPEG', x, y, finalW, finalH);
                         };
 
                         if (mode === 'both' || mode === 'puzzle') {
@@ -310,16 +309,18 @@
                     } finally {
                         setIsExporting(false);
                     }
-                }, 100);
+                }, 200);
             };
 
             return (
-                <div className="h-screen flex flex-col lg:flex-row overflow-hidden">
+                <div className="h-screen flex flex-col lg:flex-row overflow-hidden bg-slate-100">
                     {/* 左側控制欄 */}
-                    <aside className="w-full lg:w-96 bg-white border-b lg:border-r border-slate-200 flex flex-col z-10 overflow-y-auto h-auto lg:h-screen shadow-xl">
-                        <div className="p-6 md:p-8 space-y-6">
+                    <aside className={`sidebar-transition relative bg-white border-b lg:border-r border-slate-200 flex flex-col z-20 shadow-xl no-scrollbar
+                        ${isSidebarCollapsed ? 'lg:w-0 -translate-x-full lg:translate-x-0 overflow-hidden' : 'w-full lg:w-96'}`}>
+                        
+                        <div className="p-6 md:p-8 space-y-6 min-w-[24rem]">
                             <header className="flex items-center gap-4">
-                                <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                                <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg">
                                     <Icon name="puzzlePiece" size={32} />
                                 </div>
                                 <h1 className="font-black text-2xl md:text-3xl tracking-tight text-slate-800">自製拼圖產生器</h1>
@@ -332,36 +333,30 @@
                                         <Icon name="image" size={24} className="text-indigo-600" /> 1. 選取圖片
                                     </label>
                                     {image && (
-                                        <button onClick={() => setImage(null)} className="text-red-500 font-bold flex items-center gap-1 hover:bg-red-50 px-3 py-1 rounded-lg transition-all text-base">
+                                        <button onClick={() => setImage(null)} className="text-red-500 font-bold flex items-center gap-1 hover:bg-red-50 px-3 py-1 rounded-lg transition-all">
                                             <Icon name="trash" size={18} /> 清除
                                         </button>
                                     )}
                                 </div>
                                 {!image ? (
-                                    <div 
-                                        onClick={() => fileInputRef.current.click()}
-                                        className="border-4 border-dashed border-slate-200 rounded-3xl p-10 flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-all group active:scale-95"
-                                    >
-                                        <Icon name="upload" size={48} className="text-slate-300 group-hover:text-indigo-500 transition-colors" />
-                                        <span className="text-lg text-slate-500 font-black text-center">點擊這裡選取照片</span>
+                                    <div onClick={() => fileInputRef.current.click()} className="border-4 border-dashed border-slate-200 rounded-3xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-all active:scale-95">
+                                        <Icon name="upload" size={48} className="text-slate-300" />
+                                        <span className="text-lg text-slate-500 font-black">點擊選取圖片</span>
                                     </div>
                                 ) : (
-                                    <div className="relative group rounded-3xl overflow-hidden shadow-lg border-4 border-white">
-                                        <img src={image.src} className="w-full h-32 md:h-40 object-cover" />
+                                    <div className="relative group rounded-3xl overflow-hidden shadow-lg border-4 border-white h-32 md:h-40">
+                                        <img src={image.src} className="w-full h-full object-cover" />
                                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
-                                            <button onClick={() => fileInputRef.current.click()} className="bg-white text-slate-900 font-black px-6 py-3 rounded-full text-lg shadow-xl">更換照片</button>
+                                            <button onClick={() => fileInputRef.current.click()} className="bg-white text-slate-900 font-black px-6 py-2 rounded-full shadow-xl">更換圖片</button>
                                         </div>
                                     </div>
                                 )}
                                 <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleUpload} />
                             </section>
 
-                            {/* 2. 參數設定 (摺疊功能) */}
+                            {/* 2. 參數設定 */}
                             <section className="bg-slate-50 rounded-[2rem] border border-slate-100 overflow-hidden">
-                                <button 
-                                    onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                                    className="w-full p-6 flex items-center justify-between hover:bg-slate-100/50 transition-colors"
-                                >
+                                <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="w-full p-6 flex items-center justify-between hover:bg-slate-100/50">
                                     <div className="flex items-center gap-2">
                                         <Icon name="puzzle" size={24} className="text-indigo-600" />
                                         <span className="text-lg md:text-xl font-black text-slate-700">2. 設定切割方式</span>
@@ -372,33 +367,24 @@
                                 {isSettingsOpen && (
                                     <div className="p-6 pt-0 space-y-8 animate-in slide-in-from-top duration-300">
                                         <div className="flex p-2 bg-white rounded-2xl border-2 border-slate-100">
-                                            <button onClick={() => setStyle('grid')} className={`flex-1 py-4 text-lg font-black rounded-xl transition-all ${style === 'grid' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>標準網格</button>
-                                            <button onClick={() => setStyle('irregular')} className={`flex-1 py-4 text-lg font-black rounded-xl transition-all ${style === 'irregular' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>隨機斜線</button>
+                                            <button onClick={() => setStyle('grid')} className={`flex-1 py-4 text-lg font-black rounded-xl transition-all ${style === 'grid' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>標準網格</button>
+                                            <button onClick={() => setStyle('irregular')} className={`flex-1 py-4 text-lg font-black rounded-xl transition-all ${style === 'irregular' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>隨機斜線</button>
                                         </div>
 
-                                        <div className="space-y-8 pt-2">
-                                            <div className="space-y-4">
-                                                <div className="flex justify-between items-end">
-                                                    <span className="text-lg font-black text-slate-500">橫向切割數</span>
-                                                    <span className="text-3xl font-black text-indigo-600 leading-none">{cols}</span>
-                                                </div>
+                                        <div className="space-y-6 pt-2">
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-end"><span className="text-lg font-black text-slate-500">橫向片數</span><span className="text-3xl font-black text-indigo-600">{cols}</span></div>
                                                 <input type="range" min="1" max="10" value={cols} onChange={e => setCols(parseInt(e.target.value))} className="w-full" />
                                             </div>
-                                            <div className="space-y-4">
-                                                <div className="flex justify-between items-end">
-                                                    <span className="text-lg font-black text-slate-500">縱向切割數</span>
-                                                    <span className="text-3xl font-black text-indigo-600 leading-none">{rows}</span>
-                                                </div>
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-end"><span className="text-lg font-black text-slate-500">縱向片數</span><span className="text-3xl font-black text-indigo-600">{rows}</span></div>
                                                 <input type="range" min="1" max="10" value={rows} onChange={e => setRows(parseInt(e.target.value))} className="w-full" />
                                             </div>
-                                            <div className="space-y-4">
-                                                <div className="flex justify-between items-end">
-                                                    <span className="text-lg font-black text-slate-500">切割線粗細</span>
-                                                    <span className="text-2xl font-black text-indigo-600 leading-none">{lineWidth}px</span>
-                                                </div>
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-end"><span className="text-lg font-black text-slate-500">線條粗細</span><span className="text-2xl font-black text-indigo-600">{lineWidth}px</span></div>
                                                 <input type="range" min="1" max="10" value={lineWidth} onChange={e => setLineWidth(parseInt(e.target.value))} className="w-full" />
                                             </div>
-                                            <button onClick={() => setRandomSeed(Math.random())} className="w-full py-4 bg-white border-2 border-indigo-100 rounded-2xl text-indigo-600 font-black text-lg flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all active:scale-95">
+                                            <button onClick={() => setRandomSeed(Math.random())} className="w-full py-4 bg-white border-2 border-indigo-100 rounded-2xl text-indigo-600 font-black text-lg flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all">
                                                 <Icon name="refresh" size={20} /> 重新隨機切割
                                             </button>
                                         </div>
@@ -406,54 +392,50 @@
                                 )}
                             </section>
 
-                            {/* 3. 列印與下載 (按鈕已恢復) */}
-                            <div className="pt-2 pb-8 space-y-4">
-                                <label className="text-lg md:text-xl font-black text-slate-700 flex items-center gap-2 ml-1">
+                            {/* 3. 下載按鈕 */}
+                            <div className="pt-2 space-y-4">
+                                <label className="text-lg font-black text-slate-700 flex items-center gap-2">
                                     <Icon name="download" size={24} className="text-indigo-600" /> 3. 列印與下載
                                 </label>
-                                <button 
-                                    disabled={!image || isExporting}
-                                    onClick={() => exportPDF('both')}
-                                    className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 hover:bg-black active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-xl"
-                                >
+                                <button disabled={!image || isExporting} onClick={() => exportPDF('both')} className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 hover:bg-black active:scale-95 disabled:opacity-30 transition-all shadow-xl">
                                     <Icon name="file" size={24} /> 下載完整 PDF (兩頁)
                                 </button>
                                 <div className="grid grid-cols-2 gap-3">
-                                    <button 
-                                        disabled={!image || isExporting} 
-                                        onClick={() => exportPDF('puzzle')} 
-                                        className="bg-white border-2 border-slate-200 text-slate-700 py-4 rounded-2xl font-black text-base hover:bg-slate-50 transition-all active:scale-95 disabled:opacity-50"
-                                    >
-                                        單印拼圖
-                                    </button>
-                                    <button 
-                                        disabled={!image || isExporting} 
-                                        onClick={() => exportPDF('guide')} 
-                                        className="bg-white border-2 border-slate-200 text-slate-700 py-4 rounded-2xl font-black text-base hover:bg-slate-50 transition-all active:scale-95 disabled:opacity-50"
-                                    >
-                                        單印底圖
-                                    </button>
-                                </div>
-                                <div className="text-center pt-4">
-                                    <p className="text-sm font-bold text-slate-400">設計：鄭凱文 職能治療師</p>
+                                    <button disabled={!image || isExporting} onClick={() => exportPDF('puzzle')} className="bg-white border-2 border-slate-200 text-slate-700 py-4 rounded-2xl font-black hover:bg-slate-50 transition-all disabled:opacity-50">單印拼圖</button>
+                                    <button disabled={!image || isExporting} onClick={() => exportPDF('guide')} className="bg-white border-2 border-slate-200 text-slate-700 py-4 rounded-2xl font-black hover:bg-slate-50 transition-all disabled:opacity-50">單印底圖</button>
                                 </div>
                             </div>
+
+                            <footer className="text-center py-6 border-t border-slate-100">
+                                <p className="text-base font-bold text-slate-500">
+                                    設計：<a href="https://www.facebook.com/mpotkevin" target="_blank" className="text-indigo-600 hover:underline inline-flex items-center gap-1">職能治療師 - 鄭凱文 <Icon name="external" size={14}/></a>
+                                </p>
+                            </footer>
                         </div>
                     </aside>
 
-                    {/* 右側預覽區 (電腦版自動縮放) */}
+                    {/* 收合按鈕 (電腦版) */}
+                    <button 
+                        onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                        className="hidden lg:flex absolute left-0 top-1/2 -translate-y-1/2 bg-white border border-slate-200 p-2 rounded-r-2xl shadow-lg z-30 hover:bg-indigo-600 hover:text-white transition-all sidebar-transition"
+                        style={{ left: isSidebarCollapsed ? '0' : '24rem' }}
+                    >
+                        <Icon name={isSidebarCollapsed ? "chevronRight" : "chevronLeft"} size={28} />
+                    </button>
+
+                    {/* 右側預覽區 */}
                     <main id="main-container" className="flex-1 p-6 lg:p-10 flex flex-col items-center justify-center relative bg-slate-100 overflow-hidden">
                         {image ? (
                             <div className="w-full h-full flex flex-col items-center justify-between py-4 animate-in fade-in duration-500">
-                                {/* 切換頁籤 */}
-                                <div className="bg-white/80 backdrop-blur-md p-2 rounded-[2rem] flex shadow-lg border border-white w-full max-w-md">
-                                    <button onClick={() => setPreviewTab('puzzle')} className={`flex-1 py-4 px-6 rounded-2xl text-lg md:text-xl font-black transition-all flex items-center justify-center gap-2 ${previewTab === 'puzzle' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:text-slate-700'}`}>拼圖預覽</button>
-                                    <button onClick={() => setPreviewTab('guide')} className={`flex-1 py-4 px-6 rounded-2xl text-lg md:text-xl font-black transition-all flex items-center justify-center gap-2 ${previewTab === 'guide' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:text-slate-700'}`}>引導底圖</button>
+                                {/* 切換頁籤 - 獨立區塊防止遮擋 */}
+                                <div className="bg-white/90 backdrop-blur-md p-2 rounded-[2rem] flex shadow-lg border border-white w-full max-w-md z-10">
+                                    <button onClick={() => setPreviewTab('puzzle')} className={`flex-1 py-4 rounded-2xl text-lg md:text-xl font-black transition-all ${previewTab === 'puzzle' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-50'}`}>拼圖預覽</button>
+                                    <button onClick={() => setPreviewTab('guide')} className={`flex-1 py-4 rounded-2xl text-lg md:text-xl font-black transition-all ${previewTab === 'guide' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-50'}`}>引導底圖</button>
                                 </div>
                                 
-                                {/* 畫布容器 */}
-                                <div className="flex-1 flex items-center justify-center w-full min-h-0">
-                                    <div className="bg-white p-4 md:p-6 rounded-[2.5rem] custom-shadow border-[12px] border-white transition-all transform hover:scale-[1.01]">
+                                {/* 畫布容器 - 增加間距 */}
+                                <div className="flex-1 flex items-center justify-center w-full min-h-0 my-6">
+                                    <div className="bg-white p-4 md:p-6 rounded-[2.5rem] custom-shadow border-[12px] border-white transition-all transform">
                                         <canvas 
                                             ref={canvasRef} 
                                             width={canvasSize.width} 
@@ -465,33 +447,30 @@
                                     {isExporting && (
                                         <div className="absolute inset-0 bg-white/90 backdrop-blur-md rounded-[3rem] flex flex-col items-center justify-center gap-6 z-20 shadow-2xl">
                                             <div className="w-20 h-20 border-8 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                                            <p className="font-black text-indigo-600 text-3xl animate-pulse text-center px-4 leading-relaxed">正在製作高清檔案<br/>標題將自動加入，請稍候...</p>
+                                            <p className="font-black text-indigo-600 text-3xl animate-pulse text-center px-4">正在製作高清檔案<br/>標題將自動加入，請稍候...</p>
                                         </div>
                                     )}
                                 </div>
 
                                 {/* 提示標籤 */}
-                                <div className="flex flex-wrap justify-center gap-4 mt-4">
-                                    {['A4 比例輸出', '高清高品質', '中文標題支援'].map(tag => (
-                                        <span key={tag} className="px-6 py-2 bg-white/50 border-2 border-white rounded-full text-base font-black text-slate-500 shadow-sm">{tag}</span>
+                                <div className="flex flex-wrap justify-center gap-4 mt-2">
+                                    {['A4 比例輸出', '高清高品質', '手機相容模式'].map(tag => (
+                                        <span key={tag} className="px-6 py-2 bg-white border-2 border-white rounded-full text-base font-black text-slate-500 shadow-sm">{tag}</span>
                                     ))}
                                 </div>
                             </div>
                         ) : (
-                            <div className="text-center max-w-lg space-y-10 animate-in fade-in zoom-in duration-700 px-6">
+                            <div className="text-center max-w-lg space-y-10 px-6">
                                 <div className="w-40 h-40 bg-white rounded-[4rem] shadow-2xl shadow-indigo-100 flex items-center justify-center text-indigo-600 mx-auto transform -rotate-6 hover:rotate-0 transition-transform">
                                     <Icon name="puzzlePiece" size={80} />
                                 </div>
                                 <div className="space-y-4">
                                     <h2 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900 leading-tight">歡迎使用<br/><span className="text-indigo-600">自製拼圖產生器</span></h2>
-                                    <p className="text-slate-500 text-xl md:text-2xl font-bold leading-relaxed">
-                                        只要簡單三步驟，<br/>即可製作專屬的拼圖教材。
+                                    <p className="text-slate-500 text-xl md:text-2xl font-bold">
+                                        上傳照片，快速製作練習教材。
                                     </p>
                                 </div>
-                                <button 
-                                    onClick={() => fileInputRef.current.click()}
-                                    className="bg-indigo-600 text-white px-12 py-7 rounded-[2.5rem] font-black text-2xl shadow-2xl shadow-indigo-200 hover:bg-indigo-700 hover:scale-105 active:scale-95 transition-all flex items-center gap-4 mx-auto"
-                                >
+                                <button onClick={() => fileInputRef.current.click()} className="bg-indigo-600 text-white px-12 py-7 rounded-[2.5rem] font-black text-2xl shadow-2xl hover:bg-indigo-700 transition-all flex items-center gap-4 mx-auto">
                                     選取檔案開始製作 <Icon name="arrowRight" size={28} />
                                 </button>
                             </div>
