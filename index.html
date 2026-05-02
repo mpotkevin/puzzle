@@ -1,417 +1,367 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>自製拼圖產生器 - 專為長輩設計</title>
-    <!-- 載入外部資源 -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
-        
-        body {
-            font-family: 'Noto Sans TC', sans-serif;
-            touch-action: manipulation;
-            background-color: #f8fafc;
-        }
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { Upload, Download, Printer, Image as ImageIcon, LayoutGrid, Puzzle, Trash2, Sliders, Monitor, Smartphone, ChevronRight, RefreshCw } from 'lucide-react';
 
-        /* 吸附成功動畫 */
-        @keyframes snapPulse {
-            0% { transform: scale(1); filter: brightness(1); }
-            50% { transform: scale(1.1); filter: brightness(1.5); }
-            100% { transform: scale(1); filter: brightness(1); }
-        }
-        .piece-locked {
-            animation: snapPulse 0.4s ease-out;
-            z-index: 10 !important;
-        }
+const App = () => {
+  // --- 狀態定義 ---
+  const [image, setImage] = useState(null);
+  
+  // 統一使用行列控制
+  const [rows, setRows] = useState(3);
+  const [cols, setCols] = useState(4);
+  
+  const [lineWidth, setLineWidth] = useState(2);
+  const [style, setStyle] = useState('irregular'); 
+  const [previewTab, setPreviewTab] = useState('puzzle'); 
+  const [isExporting, setIsExporting] = useState(false);
+  const [isJsPdfLoaded, setIsJsPdfLoaded] = useState(false);
+  const [randomSeed, setRandomSeed] = useState(0.5);
+  const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
 
-        /* 隱藏滾動條但保持功能 */
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
+  const canvasRef = useRef(null);
+  const fileInputRef = useRef(null);
 
-        /* 讓拼圖在拖曳時有視覺反饋 */
-        .dragging {
-            z-index: 100 !important;
-            transform: scale(1.05);
-            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-        }
+  // --- 輔助函式 ---
 
-        /* 成功畫面磨砂效果 */
-        .glass-overlay {
-            background: rgba(15, 23, 42, 0.4);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-        }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
+  const updateCanvasDimensions = useCallback((img) => {
+    const container = document.getElementById('canvas-container');
+    const maxWidth = container ? container.clientWidth : (window.innerWidth > 768 ? 800 : window.innerWidth - 40);
+    const scale = maxWidth / img.width;
+    setCanvasSize({ width: img.width * scale, height: img.height * scale });
+  }, []);
 
-    <script type="text/babel">
-        const { useState, useRef, useEffect, useCallback } = React;
+  const handleUpload = useCallback((e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          setImage(img);
+          updateCanvasDimensions(img);
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+  }, [updateCanvasDimensions]);
 
-        // 圖示組件封裝
-        const Icon = ({ name, size = 24, className = "" }) => {
-            useEffect(() => {
-                lucide.createIcons();
-            }, [name]);
-            return <i data-lucide={name} className={`${className}`} style={{ width: size, height: size }}></i>;
+  // 載入 PDF 函式庫
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    script.async = true;
+    script.onload = () => setIsJsPdfLoaded(true);
+    document.body.appendChild(script);
+    return () => {
+      if (document.body.contains(script)) document.body.removeChild(script);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (image) {
+      const handleResize = () => updateCanvasDimensions(image);
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }
+  }, [image, updateCanvasDimensions]);
+
+  // --- 拼圖點位計算：加入 3:1 長寬比警示與優化 ---
+  
+  const points = useMemo(() => {
+    const pts = [];
+    const jitter = style === 'irregular' ? 0.35 : 0; // 隨機斜線的擾動幅度
+    
+    for (let i = 0; i <= rows; i++) {
+      pts[i] = [];
+      for (let j = 0; j <= cols; j++) {
+        let x = j / cols;
+        let y = i / rows;
+
+        // 偽隨機生成函數
+        const getSeed = (a, b, offset) => {
+          const val = Math.sin(a * 17.123 + b * 23.456 + (randomSeed + offset) * 100) * 43758.5453;
+          return val - Math.floor(val);
         };
 
-        const App = () => {
-            const [image, setImage] = useState(null);
-            const [piecesCount, setPiecesCount] = useState(4);
-            const [layoutType, setLayoutType] = useState('grid');
-            const [mode, setMode] = useState('editor');
-            const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
-            const [gameComplete, setGameComplete] = useState(false);
-            const [showHelpers, setShowHelpers] = useState(false);
-            const [lineWidth, setLineWidth] = useState(3);
-            const [lineColor, setLineColor] = useState('#000000');
-            const [pieces, setPieces] = useState([]);
-            const [lastLockedId, setLastLockedId] = useState(null);
+        if (style === 'irregular') {
+          // 內部點：多向擾動產生斜角
+          if (i > 0 && i < rows && j > 0 && j < cols) {
+            x += (getSeed(i, j, 0) - 0.5) * (jitter / cols);
+            y += (getSeed(j, i, 0.5) - 0.5) * (jitter / rows);
+          } 
+          // 邊界點：在邊線上微調以改變線條切入的角度
+          else {
+            const edgeJitter = jitter * 0.8;
+            if ((i === 0 || i === rows) && j > 0 && j < cols) {
+              x += (getSeed(i, j, 0.2) - 0.5) * (edgeJitter / cols);
+            }
+            if ((j === 0 || j === cols) && i > 0 && i < rows) {
+              y += (getSeed(j, i, 0.7) - 0.5) * (edgeJitter / rows);
+            }
+          }
+        }
+        pts[i][j] = { x, y };
+      }
+    }
+    return pts;
+  }, [rows, cols, style, randomSeed]);
 
-            const canvasRef = useRef(null);
-            const fileInputRef = useRef(null);
-            const gameAreaRef = useRef(null);
+  // --- 繪圖邏輯 ---
 
-            // 核心邏輯：判斷內線
-            const isInternalEdge = (p1, p2, w, h) => {
-                const threshold = 2.0;
-                const onLeft = p1.x < threshold && p2.x < threshold;
-                const onRight = Math.abs(p1.x - w) < threshold && Math.abs(p2.x - w) < threshold;
-                const onTop = p1.y < threshold && p2.y < threshold;
-                const onBottom = Math.abs(p1.y - h) < threshold && Math.abs(p2.y - h) < threshold;
-                return !(onLeft || onRight || onTop || onBottom);
-            };
+  const drawLayers = useCallback((ctx, w, h, targetTab = previewTab) => {
+    ctx.clearRect(0, 0, w, h);
+    const isGuide = targetTab === 'guide';
 
-            // 生成拼圖結構
-            const calculateLayout = (w, h, count, type) => {
-                const rows = Math.ceil(Math.sqrt(count));
-                const cols = Math.ceil(count / rows);
-                const pw = w / cols;
-                const ph = h / rows;
-                const layoutPieces = [];
+    if (!isGuide) {
+      if (image) ctx.drawImage(image, 0, 0, w, h);
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+    }
 
-                const gridPoints = [];
-                for (let i = 0; i <= cols; i++) {
-                    gridPoints[i] = [];
-                    for (let j = 0; j <= rows; j++) {
-                        let x = i * pw;
-                        let y = j * ph;
-                        if (type === 'irregular' && i > 0 && i < cols && j > 0 && j < rows) {
-                            x += (Math.random() - 0.5) * pw * 0.45;
-                            y += (Math.random() - 0.5) * ph * 0.45;
-                        }
-                        gridPoints[i][j] = { x, y };
-                    }
-                }
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.strokeStyle = isGuide ? '#D1D5DB' : '#000000'; 
+    ctx.lineWidth = lineWidth;
 
-                let created = 0;
-                for (let r = 0; r < rows; r++) {
-                    for (let c = 0; c < cols; c++) {
-                        if (created >= count) break;
-                        const p1 = gridPoints[c][r];
-                        const p2 = gridPoints[c + 1][r];
-                        const p3 = gridPoints[c + 1][r + 1];
-                        const p4 = gridPoints[c][r + 1];
-                        const minX = Math.min(p1.x, p2.x, p3.x, p4.x);
-                        const minY = Math.min(p1.y, p2.y, p3.y, p4.y);
-                        const maxX = Math.max(p1.x, p2.x, p3.x, p4.x);
-                        const maxY = Math.max(p1.y, p2.y, p3.y, p4.y);
+    // 繪製格線
+    for (let i = 0; i <= rows; i++) {
+      for (let j = 0; j <= cols; j++) {
+        // 橫線
+        if (j < cols) {
+          ctx.moveTo(points[i][j].x * w, points[i][j].y * h);
+          ctx.lineTo(points[i][j+1].x * w, points[i][j+1].y * h);
+        }
+        // 縱線
+        if (i < rows) {
+          ctx.moveTo(points[i][j].x * w, points[i][j].y * h);
+          ctx.lineTo(points[i+1][j].x * w, points[i+1][j].y * h);
+        }
+      }
+    }
+    ctx.stroke();
 
-                        layoutPieces.push({
-                            id: `p-${r}-${c}`,
-                            points: [p1, p2, p3, p4],
-                            edges: [[p1, p2], [p2, p3], [p3, p4], [p4, p1]],
-                            bounds: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
-                            correctX: minX,
-                            correctY: minY
-                        });
-                        created++;
-                    }
-                }
-                return layoutPieces;
-            };
+    // 繪製黑色外框 (確保對齊)
+    ctx.beginPath();
+    ctx.strokeStyle = '#000000'; 
+    ctx.lineWidth = lineWidth;
+    ctx.strokeRect(0, 0, w, h);
+  }, [rows, cols, points, lineWidth, image, previewTab]);
 
-            // 初始化遊戲
-            const initGame = () => {
-                if (!image) return;
-                const containerWidth = Math.min(window.innerWidth - 40, 800);
-                const scale = containerWidth / imageSize.width;
-                const playHeight = imageSize.height * scale;
-                const layout = calculateLayout(containerWidth, playHeight, piecesCount, layoutType);
+  useEffect(() => {
+    if (!image || !canvasRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    drawLayers(ctx, canvasSize.width, canvasSize.height);
+  }, [image, canvasSize, previewTab, drawLayers]);
 
-                setPieces(layout.map(p => ({
-                    ...p,
-                    x: Math.random() * (containerWidth - p.bounds.w),
-                    y: playHeight + 150 + Math.random() * 200,
-                    scale: scale,
-                    isDragging: false,
-                    isLocked: false
-                })));
-                setGameComplete(false);
-                setMode('play');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            };
+  // --- PDF 匯出 ---
 
-            // 下載
-            const download = () => {
-                const link = document.createElement('a');
-                link.download = '自製拼圖.png';
-                link.href = canvasRef.current.toDataURL();
-                link.click();
-            };
+  const exportPDF = async (mode) => {
+    if (!image || !isJsPdfLoaded) return;
+    setIsExporting(true);
 
-            // 圖片上傳
-            const handleUpload = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        setImage(img);
-                        setImageSize({ width: img.width, height: img.height });
-                    };
-                    img.src = ev.target.result;
-                };
-                reader.readAsDataURL(file);
-            };
+    try {
+      const { jsPDF } = window.jspdf;
+      const isLandscape = image.width > image.height;
+      const doc = new jsPDF({
+        orientation: isLandscape ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
 
-            // 繪製編輯器
-            useEffect(() => {
-                if (image && canvasRef.current && mode === 'editor') {
-                    const canvas = canvasRef.current;
-                    const ctx = canvas.getContext('2d');
-                    const dw = Math.min(window.innerWidth - 60, 800);
-                    const ratio = dw / imageSize.width;
-                    canvas.width = dw;
-                    canvas.height = imageSize.height * ratio;
-                    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 15;
+      const titleAreaHeight = 12;
+      const availableW = pageWidth - (margin * 2);
+      const availableH = pageHeight - (margin * 2) - titleAreaHeight;
 
-                    const layout = calculateLayout(canvas.width, canvas.height, piecesCount, layoutType);
-                    ctx.strokeStyle = lineColor;
-                    ctx.lineWidth = lineWidth;
-                    ctx.lineJoin = 'round';
-                    ctx.lineCap = 'round';
+      const scale = Math.min(availableW / image.width, availableH / image.height);
+      const finalW = image.width * scale;
+      const finalH = image.height * scale;
 
-                    layout.forEach(p => {
-                        p.edges.forEach(([pt1, pt2]) => {
-                            if (isInternalEdge(pt1, pt2, canvas.width, canvas.height)) {
-                                ctx.beginPath();
-                                ctx.moveTo(pt1.x, pt1.y);
-                                ctx.lineTo(pt2.x, pt2.y);
-                                ctx.stroke();
-                            }
-                        });
-                    });
-                }
-            }, [image, piecesCount, layoutType, lineWidth, lineColor, mode, imageSize]);
+      const xPos = (pageWidth - finalW) / 2;
+      const yPos = margin + titleAreaHeight + (availableH - finalH) / 2;
 
-            // 拖曳邏輯 (電腦 + 手機)
-            const handleStart = (id, clientX, clientY) => {
-                if (gameComplete) return;
-                setPieces(prev => {
-                    const idx = prev.findIndex(p => p.id === id);
-                    if (idx === -1 || prev[idx].isLocked) return prev;
-                    const newArr = [...prev];
-                    const [item] = newArr.splice(idx, 1);
-                    newArr.push({ ...item, isDragging: true, dragOffset: { x: clientX - item.x, y: clientY - item.y } });
-                    return newArr;
-                });
-            };
+      const renderWithTitleToData = (type, pageTitle) => {
+        const qualityScale = 2;
+        const titlePx = 30;
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = image.width * qualityScale;
+        tempCanvas.height = (image.height + titlePx) * qualityScale;
+        const tctx = tempCanvas.getContext('2d');
+        tctx.fillStyle = '#ffffff';
+        tctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        tctx.fillStyle = '#1e293b';
+        tctx.font = `bold ${18 * qualityScale}px sans-serif`;
+        tctx.textAlign = 'center';
+        tctx.fillText(pageTitle, tempCanvas.width / 2, 20 * qualityScale);
+        tctx.save();
+        tctx.translate(0, titlePx * qualityScale);
+        tctx.scale(qualityScale, qualityScale);
+        drawLayers(tctx, image.width, image.height, type);
+        tctx.restore();
+        return tempCanvas.toDataURL('image/jpeg', 0.95);
+      };
 
-            const handleMove = (clientX, clientY) => {
-                const dragging = pieces.find(p => p.isDragging);
-                if (!dragging) return;
-                
-                setPieces(prev => prev.map(p => 
-                    p.isDragging ? { ...p, x: clientX - p.dragOffset.x, y: clientY - p.dragOffset.y } : p
-                ));
-            };
+      if (mode === 'both' || mode === 'puzzle') {
+        const puzzleImg = renderWithTitleToData('puzzle', '第一頁：拼圖訓練頁面 (Puzzle Page)');
+        doc.addImage(puzzleImg, 'JPEG', xPos, yPos - titleAreaHeight, finalW, finalH + titleAreaHeight);
+        if (mode === 'both') doc.addPage();
+      }
+      if (mode === 'both' || mode === 'guide') {
+        const guideImg = renderWithTitleToData('guide', '第二頁：底圖引導頁面 (Guide Page)');
+        doc.addImage(guideImg, 'JPEG', xPos, yPos - titleAreaHeight, finalW, finalH + titleAreaHeight);
+      }
 
-            const handleEnd = () => {
-                const dragging = pieces.find(p => p.isDragging);
-                if (!dragging) return;
+      doc.save(`職能拼圖_${cols}x${rows}_${new Date().getTime()}.pdf`);
+    } catch (err) { console.error(err); }
+    finally { setIsExporting(false); }
+  };
 
-                const trayX = (gameAreaRef.current.offsetWidth - (dragging.scale * imageSize.width)) / 2;
-                const trayY = 64; // top-16
-                const tx = trayX + dragging.correctX;
-                const ty = trayY + dragging.correctY;
-                const dist = Math.sqrt(Math.pow(dragging.x - tx, 2) + Math.pow(dragging.y - ty, 2));
+  // 比例警示
+  const pieceRatio = useMemo(() => {
+    if (!image) return 1;
+    const pW = image.width / cols;
+    const pH = image.height / rows;
+    return Math.max(pW/pH, pH/pW);
+  }, [image, rows, cols]);
 
-                if (dist < 50) {
-                    setLastLockedId(dragging.id);
-                    setPieces(prev => {
-                        const next = prev.map(p => p.id === dragging.id ? { ...p, x: tx, y: ty, isDragging: false, isLocked: true } : p);
-                        if (next.every(p => p.isLocked)) setGameComplete(true);
-                        return next;
-                    });
-                    setTimeout(() => setLastLockedId(null), 600);
-                } else {
-                    setPieces(prev => prev.map(p => ({ ...p, isDragging: false })));
-                }
-            };
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row font-sans text-slate-800">
+      <aside className="w-full lg:w-96 bg-white border-b lg:border-r border-slate-200 p-6 flex flex-col gap-6 shadow-sm overflow-y-auto lg:h-screen">
+        <div className="flex items-center gap-3 border-b pb-4">
+          <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-100"><Puzzle className="text-white" size={24} /></div>
+          <div><h1 className="font-bold text-xl tracking-tight text-slate-900 leading-tight">職能拼圖系統</h1><p className="text-xs text-slate-500 font-medium tracking-wide uppercase">OT Designer Tool</p></div>
+        </div>
 
-            return (
-                <div className="flex flex-col min-h-screen">
-                    <header className="bg-white border-b px-4 py-3 flex justify-between items-center sticky top-0 z-[60] shadow-sm">
-                        <div className="flex items-center gap-2">
-                            <div className="bg-indigo-600 p-2 rounded-xl text-white"><Icon name="scissors" size={20} /></div>
-                            <div>
-                                <h1 className="text-lg font-black leading-tight">自製拼圖</h1>
-                                <p className="text-[9px] text-slate-400 font-bold tracking-widest uppercase">Senior Edition</p>
-                            </div>
-                        </div>
-                        <div className="flex gap-2">
-                            {image && (
-                                <button onClick={() => mode === 'editor' ? initGame() : setMode('editor')} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md">
-                                    {mode === 'editor' ? '開始線上玩' : '返回設定'}
-                                </button>
-                            )}
-                        </div>
-                    </header>
+        <section>
+          <div className="flex justify-between items-center mb-3">
+            <label className="text-sm font-bold text-slate-700">1. 上傳訓練素材</label>
+            {image && <button onClick={() => setImage(null)} className="text-xs text-red-500 hover:underline">清除</button>}
+          </div>
+          {!image ? (
+            <div onClick={() => fileInputRef.current.click()} className="border-2 border-dashed border-slate-200 rounded-2xl p-10 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-all group">
+              <Upload className="text-slate-400 group-hover:text-indigo-600" size={32} />
+              <span className="text-xs text-slate-500 font-bold">選取圖片</span>
+            </div>
+          ) : (
+            <div className="rounded-xl overflow-hidden border border-slate-200 p-1 bg-slate-50 shadow-inner">
+              <img src={image.src} className="w-full h-24 object-cover rounded-lg" alt="Upload preview" />
+            </div>
+          )}
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+        </section>
 
-                    <main className="flex-1 p-4 lg:p-8 flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto w-full">
-                        {!image ? (
-                            <div className="w-full flex flex-col items-center justify-center py-20 border-4 border-dashed border-slate-200 rounded-[2rem] bg-white">
-                                <div className="p-6 bg-indigo-50 rounded-full text-indigo-600 mb-6"><Icon name="camera" size={48} /></div>
-                                <h2 className="text-2xl font-bold mb-6">請選擇一張照片</h2>
-                                <input type="file" className="hidden" ref={fileInputRef} onChange={handleUpload} accept="image/*" />
-                                <button onClick={() => fileInputRef.current.click()} className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-bold text-lg shadow-lg">上傳照片</button>
-                            </div>
-                        ) : (
-                            <>
-                                {mode === 'editor' && (
-                                    <aside className="w-full lg:w-80 space-y-4">
-                                        <div className="bg-white p-6 rounded-3xl shadow-sm border space-y-6">
-                                            <div className="flex items-center gap-2 font-bold text-slate-700 border-b pb-3"><Icon name="settings-2" size={18} />拼圖設定</div>
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="text-xs font-black text-slate-400 block mb-2 uppercase">拼圖塊數</label>
-                                                    <input type="number" value={piecesCount} onChange={e => setPiecesCount(Math.max(2, parseInt(e.target.value)||2))} className="w-full px-4 py-2 border-2 rounded-xl font-bold text-center outline-none focus:border-indigo-500" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-black text-slate-400 block mb-2 uppercase">切割形狀</label>
-                                                    <div className="flex gap-2">
-                                                        <button onClick={()=>setLayoutType('grid')} className={`flex-1 py-3 rounded-xl border-2 font-bold text-xs ${layoutType==='grid'?'bg-indigo-50 border-indigo-500 text-indigo-600':'border-slate-100'}`}>工整方塊</button>
-                                                        <button onClick={()=>setLayoutType('irregular')} className={`flex-1 py-3 rounded-xl border-2 font-bold text-xs ${layoutType==='irregular'?'bg-indigo-50 border-indigo-500 text-indigo-600':'border-slate-100'}`}>不規則形</button>
-                                                    </div>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div><label className="text-[10px] font-black text-slate-400 block mb-1">粗細</label><input type="range" min="1" max="10" value={lineWidth} onChange={e=>setLineWidth(parseInt(e.target.value))} className="w-full h-1 bg-slate-200 rounded-full appearance-none accent-indigo-600" /></div>
-                                                    <div><label className="text-[10px] font-black text-slate-400 block mb-1">顏色</label><input type="color" value={lineColor} onChange={e=>setLineColor(e.target.value)} className="w-full h-8 cursor-pointer bg-transparent" /></div>
-                                                </div>
-                                            </div>
-                                            <button onClick={download} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-50 flex items-center justify-center gap-2"><Icon name="download" size={18} />下載列印圖</button>
-                                            <button onClick={()=>setImage(null)} className="w-full text-slate-300 font-bold text-sm">換一張圖</button>
-                                        </div>
-                                    </aside>
-                                )}
+        <section className="bg-slate-50/80 p-5 rounded-2xl border border-slate-100 flex flex-col gap-5">
+          <div className="flex justify-between items-center">
+            <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><Sliders size={16} /> 2. 規格與片數</label>
+            {style === 'irregular' && (
+              <button onClick={() => setRandomSeed(Math.random())} className="text-indigo-600 hover:rotate-180 transition-transform duration-500 p-2 bg-white rounded-full shadow-sm" title="更換隨機斜角">
+                <RefreshCw size={18} />
+              </button>
+            )}
+          </div>
 
-                                <div className="flex-1 flex flex-col items-center">
-                                    {mode === 'editor' ? (
-                                        <div className="bg-white p-4 lg:p-8 rounded-[2rem] shadow-xl border w-full flex justify-center">
-                                            <canvas ref={canvasRef} className="max-w-full h-auto rounded-lg shadow-sm" />
-                                        </div>
-                                    ) : (
-                                        <div className="w-full space-y-4">
-                                            <div 
-                                                ref={gameAreaRef} 
-                                                className="w-full min-h-[900px] relative bg-slate-200 rounded-[2.5rem] overflow-hidden border-8 border-white shadow-xl select-none"
-                                                onMouseMove={e => handleMove(e.nativeEvent.clientX, e.nativeEvent.clientY)}
-                                                onMouseUp={handleEnd}
-                                                onTouchMove={e => {
-                                                    const touch = e.touches[0];
-                                                    handleMove(touch.clientX, touch.clientY);
-                                                    if(pieces.some(p => p.isDragging)) e.preventDefault();
-                                                }}
-                                                onTouchEnd={handleEnd}
-                                            >
-                                                {/* 成功遮罩 */}
-                                                {gameComplete && (
-                                                    <div className="absolute inset-0 z-[100] glass-overlay flex flex-col items-center justify-center animate-in fade-in duration-700">
-                                                        <div className="bg-white/90 p-8 rounded-[2rem] shadow-2xl text-center animate-bounce">
-                                                            <div className="text-emerald-500 mb-2 flex justify-center"><Icon name="check-circle-2" size={64} /></div>
-                                                            <h2 className="text-3xl font-black text-slate-800">太棒了！拼好了！</h2>
-                                                        </div>
-                                                        <div className="mt-10 flex gap-4">
-                                                            <button onClick={initGame} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl">再玩一局</button>
-                                                            <button onClick={()=>setMode('editor')} className="px-8 py-4 bg-white/20 border-2 border-white text-white rounded-2xl font-bold">返回設定</button>
-                                                        </div>
-                                                    </div>
-                                                )}
+          <div className="space-y-6">
+            <div className="flex gap-2 p-1 bg-white rounded-xl border border-slate-200 shadow-sm">
+              <button onClick={() => setStyle('grid')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${style === 'grid' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>標準網格</button>
+              <button onClick={() => setStyle('irregular')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${style === 'irregular' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>隨機斜線</button>
+            </div>
 
-                                                {/* 灰色底板 */}
-                                                <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-slate-300 rounded-lg shadow-inner overflow-hidden border border-slate-400"
-                                                     style={{ width: pieces[0]?.scale * imageSize.width, height: pieces[0]?.scale * imageSize.height }}>
-                                                    {showHelpers && pieces.map(p => (
-                                                        <div key={`h-${p.id}`} className="absolute border border-white/40 pointer-events-none opacity-50"
-                                                             style={{ left: p.correctX, top: p.correctY, width: p.bounds.w, height: p.bounds.h, clipPath: `polygon(${p.points.map(pt => `${((pt.x - p.bounds.x)/p.bounds.w)*100}% ${((pt.y - p.bounds.y)/p.bounds.h)*100}%`).join(',')})` }} />
-                                                    ))}
-                                                </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex justify-between"><span className="text-xs font-bold text-slate-500 uppercase">橫向片數 (Cols): {cols}</span></div>
+                <input type="range" min="1" max="15" value={cols} onChange={(e) => setCols(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600 rounded-lg cursor-pointer" />
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between"><span className="text-xs font-bold text-slate-500 uppercase">縱向片數 (Rows): {rows}</span></div>
+                <input type="range" min="1" max="15" value={rows} onChange={(e) => setRows(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600 rounded-lg cursor-pointer" />
+              </div>
+              <div className={`p-3 rounded-xl border text-center transition-colors ${pieceRatio > 3 ? 'bg-amber-50 border-amber-200' : 'bg-indigo-50 border-indigo-100'}`}>
+                <p className={`text-xs font-bold ${pieceRatio > 3 ? 'text-amber-600' : 'text-indigo-600'}`}>
+                  目前：{cols} x {rows} = {cols * rows} 片
+                </p>
+                {pieceRatio > 3 && <p className="text-[10px] text-amber-500 mt-1 font-medium italic">提示：拼圖塊目前較為細長</p>}
+              </div>
+            </div>
 
-                                                {/* 零件區 */}
-                                                <div className="absolute bottom-0 inset-x-0 h-80 bg-white/30 backdrop-blur-md border-t border-white/50 flex flex-col items-center pt-4">
-                                                    <span className="text-indigo-900 font-black text-sm uppercase tracking-widest opacity-40">拼圖零件存放區</span>
-                                                </div>
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <span className="text-xs font-bold text-slate-500">切割線粗細: {lineWidth}px</span>
+              <input type="range" min="1" max="10" value={lineWidth} onChange={(e) => setLineWidth(parseInt(e.target.value))} className="w-full h-1.5 accent-indigo-600" />
+            </div>
+          </div>
+        </section>
 
-                                                {/* 拼圖塊 */}
-                                                {pieces.map(p => (
-                                                    <div key={p.id}
-                                                         onMouseDown={e => handleStart(p.id, e.clientX, e.clientY)}
-                                                         onTouchStart={e => handleStart(p.id, e.touches[0].clientX, e.touches[0].clientY)}
-                                                         className={`absolute select-none cursor-pointer ${p.isDragging ? 'dragging' : ''} ${p.isLocked ? '' : 'hover:brightness-110'} ${lastLockedId === p.id ? 'piece-locked' : ''}`}
-                                                         style={{
-                                                             left: p.x, top: p.y, width: p.bounds.w, height: p.bounds.h,
-                                                             backgroundImage: `url(${image.src})`,
-                                                             backgroundPosition: `-${p.bounds.x}px -${p.bounds.y}px`,
-                                                             backgroundSize: `${imageSize.width * p.scale}px ${imageSize.height * p.scale}px`,
-                                                             clipPath: `polygon(${p.points.map(pt => `${((pt.x - p.bounds.x)/p.bounds.w)*100}% ${((pt.y - p.bounds.y)/p.bounds.h)*100}%`).join(',')})`,
-                                                             zIndex: p.isLocked ? 5 : 20,
-                                                             filter: p.isLocked ? 'none' : 'drop-shadow(0 4px 8px rgba(0,0,0,0.2))'
-                                                         }}>
-                                                        {!p.isLocked && (
-                                                            <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                                                                {p.edges.map(([pt1, pt2], i) => isInternalEdge(pt1, pt2, imageSize.width * p.scale, imageSize.height * p.scale) && (
-                                                                    <line key={i} x1={pt1.x - p.bounds.x} y1={pt1.y - p.bounds.y} x2={pt2.x - p.bounds.x} y2={pt2.y - p.bounds.y} stroke={lineColor} strokeWidth={lineWidth} />
-                                                                ))}
-                                                            </svg>
-                                                        )}
-                                                        {lastLockedId === p.id && <div className="absolute inset-0 flex items-center justify-center"><Icon name="sparkles" className="text-white drop-shadow-lg" size={32} /></div>}
-                                                    </div>
-                                                ))}
-                                            </div>
+        <section className="lg:mt-auto pt-4 flex flex-col gap-3">
+          <button disabled={!image || isExporting} onClick={() => exportPDF('both')} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-lg active:scale-95 disabled:bg-slate-200">
+            <Download size={20} /> 下載 A4 PDF (含拼圖及底圖)
+          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button disabled={!image || isExporting} onClick={() => exportPDF('puzzle')} className="text-xs bg-white border border-slate-200 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-50 shadow-sm transition-colors">單印拼圖頁</button>
+            <button disabled={!image || isExporting} onClick={() => exportPDF('guide')} className="text-xs bg-white border border-slate-200 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-50 shadow-sm transition-colors">單印底圖頁</button>
+          </div>
+        </section>
 
-                                            <div className="w-full flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-3xl mt-6 shadow-sm border gap-4">
-                                                <button onClick={()=>setShowHelpers(!showHelpers)} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${showHelpers?'bg-indigo-600 text-white shadow-indigo-100':'bg-slate-100 text-slate-500'}`}>
-                                                    <Icon name={showHelpers?'eye':'eye-off'} size={20} />{showHelpers?'關閉輔助線':'開啟輔助線'}
-                                                </button>
-                                                <p className="text-slate-400 text-xs font-bold text-center lg:text-left">操作提示：開啟輔助線可以看到白色輪廓。靠近正確位置會自動吸住！</p>
-                                                <button onClick={initGame} className="flex items-center gap-2 text-indigo-600 font-bold px-4 py-2 hover:bg-indigo-50 rounded-xl transition-all"><Icon name="refresh-cw" size={18} />重新洗牌</button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        )}
-                    </main>
-                    <footer className="text-center py-6 text-slate-300 text-[10px] font-bold uppercase tracking-widest">
-                        Designed for Seniors • Made with Love
-                    </footer>
-                </div>
-            );
-        };
+        {/* 頁尾署名與連結 */}
+        <footer className="mt-8 pt-4 border-t border-slate-100 text-center">
+          <p className="text-xs text-slate-400 font-medium">
+            設計：<a 
+              href="https://www.facebook.com/mpotkevin" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-indigo-600 transition-colors underline decoration-dotted underline-offset-4"
+            >
+              職能治療師 - 鄭凱文
+            </a>
+          </p>
+        </footer>
+      </aside>
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+      <main className="flex-1 p-4 md:p-8 flex flex-col items-center justify-start lg:justify-center overflow-hidden">
+        {image ? (
+          <div className="w-full max-w-4xl flex flex-col gap-6 items-center">
+            <div className="bg-slate-200 p-1.5 rounded-2xl flex w-full max-w-sm shadow-inner">
+              <button onClick={() => setPreviewTab('puzzle')} className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${previewTab === 'puzzle' ? 'bg-white shadow-md text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>拼圖預覽</button>
+              <button onClick={() => setPreviewTab('guide')} className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${previewTab === 'guide' ? 'bg-white shadow-md text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>引導底圖</button>
+            </div>
+            <div id="canvas-container" className="w-full relative group">
+              <div className="relative shadow-2xl rounded-2xl overflow-hidden bg-white border-[12px] border-white mx-auto transition-all duration-500 ease-in-out">
+                <canvas ref={canvasRef} width={canvasSize.width} height={canvasSize.height} className="max-w-full h-auto block mx-auto" />
+                {isExporting && (
+                  <div className="absolute inset-0 bg-white/90 backdrop-blur-md flex flex-col items-center justify-center gap-4 z-20 animate-pulse">
+                    <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="font-black text-indigo-600 text-lg">正在生成原比例 PDF...</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex gap-6 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                <span className="flex items-center gap-1.5"><Printer size={12} /> A4 Print Ready</span>
+                <span className="flex items-center gap-1.5"><Monitor size={12} /> Desktop Mode</span>
+                <span className="flex items-center gap-1.5"><Smartphone size={12} /> Mobile Ready</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="w-32 h-32 bg-indigo-50 rounded-[3rem] flex items-center justify-center text-indigo-600 mx-auto mb-10 shadow-inner group cursor-pointer hover:bg-indigo-100 transition-colors">
+              <ImageIcon size={64} className="group-hover:scale-110 transition-transform duration-500" />
+            </div>
+            <h2 className="text-4xl font-black text-slate-900 tracking-tight">設計客製化拼圖輔具</h2>
+            <p className="text-slate-600 mt-5 text-base max-w-sm mx-auto leading-relaxed font-medium">
+              支援原比例不失真下載，<br/>提供標準網格與不規則斜線兩種訓練模式。
+            </p>
+            <button onClick={() => fileInputRef.current.click()} className="mt-12 bg-indigo-600 text-white px-12 py-5 rounded-[2rem] font-bold flex items-center gap-3 mx-auto hover:bg-indigo-700 hover:shadow-2xl transition-all shadow-xl shadow-indigo-100">
+              立即選取圖片 <ChevronRight size={22} />
+            </button>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
+
+export default App;
