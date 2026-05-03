@@ -27,7 +27,7 @@
             overflow: hidden; 
         }
 
-        /* 手機版開啟捲動 */
+        /* 手機版開啟捲動，並優化過度捲動行為 */
         @media (max-width: 1024px) {
             body { overflow-y: auto; overflow-x: hidden; } 
         }
@@ -59,6 +59,7 @@
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
+        /* 滾動條美化 */
         .custom-scrollbar::-webkit-scrollbar { width: 5px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -85,7 +86,7 @@
                 chevronLeft: <path d="M15 18l-6-6 6-6" />,
                 chevronRight: <path d="M9 18l6-6-6-6" />,
                 file: <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6" />,
-                external: <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
+                external: <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
             };
 
             return (
@@ -137,10 +138,10 @@
                 const container = document.getElementById('main-container');
                 if (!container) return;
                 
-                const isMobile = window.innerWidth < 1024;
                 const availableW = container.clientWidth - 32;
-                // 手機版固定高度，電腦版填滿高度
-                const availableH = isMobile ? window.innerHeight * 0.45 : container.clientHeight - 160; 
+                // 手機版預留空間較少，讓畫布佔比較大
+                const isMobile = window.innerWidth < 1024;
+                const availableH = isMobile ? window.innerHeight * 0.5 : container.clientHeight - 160; 
                 
                 const ratio = img.height / img.width;
                 let finalW = availableW;
@@ -157,11 +158,10 @@
             useEffect(() => {
                 if (image) {
                     const timer = setTimeout(() => updateDimensions(image), 150);
-                    const handleResize = () => updateDimensions(image);
-                    window.addEventListener('resize', handleResize);
+                    window.addEventListener('resize', () => updateDimensions(image));
                     return () => {
                         clearTimeout(timer);
-                        window.removeEventListener('resize', handleResize);
+                        window.removeEventListener('resize', () => updateDimensions(image));
                     };
                 }
             }, [image, updateDimensions, isSidebarCollapsed]);
@@ -311,16 +311,16 @@
                     </header>
 
                     {/* 主要內容區 (預覽畫布) */}
-                    <main id="main-container" className="flex-1 p-4 lg:p-8 flex flex-col items-center justify-start lg:justify-center relative bg-slate-50 order-1 lg:order-2 overflow-hidden">
+                    <main id="main-container" className="flex-1 p-4 lg:p-8 flex flex-col items-center justify-start lg:justify-center relative bg-slate-50 order-1 lg:order-2">
                         {image ? (
-                            <div className="w-full h-full flex flex-col items-center justify-start lg:justify-center animate-in fade-in duration-500">
+                            <div className="w-full flex flex-col items-center animate-in fade-in duration-500">
                                 {/* 切換頁籤 */}
                                 <div className="bg-white/90 backdrop-blur-sm p-1.5 rounded-2xl flex shadow-md border border-white w-full max-w-xs mb-6 z-10">
                                     <button onClick={() => setPreviewTab('puzzle')} className={`flex-1 py-3 rounded-xl text-lg font-black transition-all ${previewTab === 'puzzle' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}>拼圖預覽</button>
                                     <button onClick={() => setPreviewTab('guide')} className={`flex-1 py-3 rounded-xl text-lg font-black transition-all ${previewTab === 'guide' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}>引導底圖</button>
                                 </div>
                                 
-                                {/* 畫布容器 */}
+                                {/* 畫布 */}
                                 <div className="relative flex items-center justify-center w-full min-h-0">
                                     <div className="bg-white p-3 lg:p-4 rounded-[2.5rem] custom-shadow border-[8px] lg:border-[12px] border-white transition-all transform">
                                         <canvas 
@@ -339,7 +339,7 @@
                                     )}
                                 </div>
 
-                                <div className="mt-4 flex gap-4 text-[10px] lg:text-xs font-bold text-slate-400 uppercase tracking-widest">
+                                <div className="mt-6 flex gap-4 text-[10px] lg:text-xs font-bold text-slate-400 uppercase tracking-widest">
                                     <span>A4 Print Ready</span>
                                     <span>•</span>
                                     <span>High Definition</span>
@@ -356,15 +356,15 @@
                                         上傳照片，快速製作專屬教材。
                                     </p>
                                 </div>
-                                <button onClick={() => fileInputRef.current.click()} className="bg-indigo-600 text-white px-10 py-5 rounded-[2rem] font-black text-xl lg:text-2xl shadow-xl hover:bg-indigo-700 transition-all flex items-center gap-4 mx-auto active:scale-95 shadow-indigo-200">
+                                <button onClick={() => fileInputRef.current.click()} className="bg-indigo-600 text-white px-10 py-5 rounded-[2.5rem] font-black text-xl lg:text-2xl shadow-xl hover:bg-indigo-700 transition-all flex items-center gap-4 mx-auto active:scale-95 shadow-indigo-200">
                                     選取檔案開始製作 <Icon name="arrowRight" size={28} />
                                 </button>
                             </div>
                         )}
                     </main>
 
-                    {/* 控制面板區：電腦版固定左側，手機版在下方 */}
-                    <aside className={`sidebar-transition relative bg-white border-t lg:border-t-0 lg:border-r border-slate-200 flex flex-col z-20 shadow-xl order-2 lg:order-1
+                    {/* 控制面板區 */}
+                    <aside className={`sidebar-transition relative bg-white border-t lg:border-t-0 lg:border-r border-slate-200 flex flex-col z-20 shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.1)] lg:shadow-xl order-2 lg:order-1
                         ${isSidebarCollapsed ? 'lg:w-0 lg:translate-x-0 overflow-hidden' : 'w-full lg:w-[28rem]'}`}>
                         
                         <div className="flex-1 overflow-y-auto lg:h-screen custom-scrollbar no-scrollbar">
@@ -377,14 +377,14 @@
                                 </header>
 
                                 {/* 1. 選取圖片 */}
-                                <section className="space-y-4 bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
+                                <section className="space-y-4 bg-slate-50/50 p-4 rounded-3xl border border-slate-100">
                                     <div className="flex items-center justify-between">
                                         <label className="text-xl font-black text-slate-700 flex items-center gap-2">
                                             <span className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-sm font-black">1</span>
                                             選取訓練圖片
                                         </label>
                                         {image && (
-                                            <button onClick={() => setImage(null)} className="text-red-500 font-bold flex items-center gap-1 hover:bg-red-50 px-3 py-1.5 rounded-xl transition-all">
+                                            <button onClick={() => setImage(null)} className="text-red-500 font-bold flex items-center gap-1 hover:bg-red-50 px-3 py-1.5 rounded-xl transition-all text-base">
                                                 <Icon name="trash" size={20} /> 清除
                                             </button>
                                         )}
