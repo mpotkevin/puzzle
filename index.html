@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>自製拼圖產生器 | Puzzle Maker Pro</title>
+    <title>自製拼圖產生器</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
@@ -76,7 +76,7 @@
                         <input type="file" id="img-input" class="hidden" accept="image/*" onchange="handleFile(this.files[0])">
                         <div id="upload-placeholder">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto text-slate-400 mb-2 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2-2v12a2 2 0 002 2z" />
                             </svg>
                             <p class="text-sm font-medium text-slate-600">點擊或拖放圖片</p>
                         </div>
@@ -92,6 +92,7 @@
                     </div>
 
                     <div class="space-y-5">
+                        <!-- 切割樣式與旋轉 -->
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">切割樣式</label>
@@ -101,8 +102,28 @@
                                 </div>
                             </div>
                             <div>
+                                <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">圖片旋轉</label>
+                                <button onclick="rotateImage()" class="w-full h-8 flex items-center justify-center gap-2 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-slate-50 transition uppercase tracking-widest bg-white">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    旋轉 90°
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 線條顏色與頁面方向 -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
                                 <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">線條顏色</label>
                                 <input type="color" id="input-color" value="#000000" oninput="updateState({lineColor: this.value})" class="w-full h-8 rounded border-none cursor-pointer bg-transparent">
+                            </div>
+                            <div>
+                                <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">PDF 方向</label>
+                                <div class="flex gap-1 p-1 bg-slate-100 rounded-lg">
+                                    <button onclick="updateState({pdfOrientation: 'p'})" id="btn-port" class="flex-1 py-1.5 text-[10px] rounded bg-white shadow-sm font-bold text-blue-600">直式</button>
+                                    <button onclick="updateState({pdfOrientation: 'l'})" id="btn-land" class="flex-1 py-1.5 text-[10px] rounded text-slate-500 hover:bg-white/50 font-medium">橫式</button>
+                                </div>
                             </div>
                         </div>
 
@@ -111,7 +132,7 @@
                                 <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">線條粗細</label>
                                 <span id="label-thickness" class="text-sm font-bold text-blue-600">5px</span>
                             </div>
-                            <input type="range" min="0.5" max="20" step="0.5" value="5" oninput="updateState({thickness: this.value})" class="w-full">
+                            <input type="range" min="1" max="30" step="1" value="5" oninput="updateState({thickness: this.value})" class="w-full">
                         </div>
 
                         <div class="grid grid-cols-2 gap-4">
@@ -181,7 +202,7 @@
             <!-- 預覽切換 Tab -->
             <div id="preview-tabs-container" class="hidden sticky top-0 w-full z-20 flex justify-center py-6 bg-slate-50/90 backdrop-blur border-b border-slate-200">
                 <div class="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
-                    <button onclick="updatePreviewPage(1)" id="tab-1" class="px-6 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all bg-blue-600 text-white">頁 1：拼圖預覽</button>
+                    <button onclick="updatePreviewPage(1)" id="tab-1" class="px-6 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all bg-blue-600 text-white shadow-sm">頁 1：拼圖預覽</button>
                     <button onclick="updatePreviewPage(2)" id="tab-2" class="px-6 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all text-slate-500 hover:text-slate-700">頁 2：輔助底圖</button>
                 </div>
             </div>
@@ -215,7 +236,6 @@
     <script>
         const { jsPDF } = window.jspdf;
         
-        // 初始狀態：粗細 5px, 4x4
         let state = {
             mode: 'grid', 
             cols: 4,
@@ -225,7 +245,9 @@
             image: null,
             seed: Math.random(),
             previewPage: 1,
-            exportScope: 'both'
+            exportScope: 'both',
+            rotation: 0, // 0, 90, 180, 270
+            pdfOrientation: 'p' // 'p' for portrait, 'l' for landscape
         };
 
         const canvas = document.getElementById('preview-canvas');
@@ -243,6 +265,7 @@
             document.getElementById('label-thickness').innerText = state.thickness + 'px';
             document.getElementById('input-color').value = state.lineColor;
             
+            // 模式按鈕樣式
             const isGrid = state.mode === 'grid';
             document.getElementById('btn-grid').className = isGrid 
                 ? "flex-1 py-1.5 text-xs rounded bg-white shadow-sm font-bold text-blue-600" 
@@ -251,7 +274,21 @@
                 ? "flex-1 py-1.5 text-xs rounded bg-white shadow-sm font-bold text-blue-600" 
                 : "flex-1 py-1.5 text-xs rounded text-slate-500 hover:bg-white/50 font-medium";
 
+            // PDF 方向按鈕樣式
+            const isPort = state.pdfOrientation === 'p';
+            document.getElementById('btn-port').className = isPort 
+                ? "flex-1 py-1.5 text-[10px] rounded bg-white shadow-sm font-bold text-blue-600" 
+                : "flex-1 py-1.5 text-[10px] rounded text-slate-500 hover:bg-white/50 font-medium";
+            document.getElementById('btn-land').className = !isPort 
+                ? "flex-1 py-1.5 text-[10px] rounded bg-white shadow-sm font-bold text-blue-600" 
+                : "flex-1 py-1.5 text-[10px] rounded text-slate-500 hover:bg-white/50 font-medium";
+
             document.getElementById('info-mode').innerText = state.mode.toUpperCase();
+            draw();
+        }
+
+        function rotateImage() {
+            state.rotation = (state.rotation + 90) % 360;
             draw();
         }
 
@@ -280,6 +317,7 @@
                 img.onload = () => {
                     state.image = img;
                     state.seed = Math.random();
+                    state.rotation = 0; // 重置旋轉
                     document.getElementById('section-2').classList.remove('disabled');
                     document.getElementById('section-3').classList.remove('disabled');
                     emptyState.classList.add('hidden');
@@ -289,7 +327,6 @@
                     const fileInfo = document.getElementById('file-info');
                     fileInfo.innerText = file.name;
                     fileInfo.classList.remove('hidden');
-                    document.getElementById('info-res').innerText = `${img.width} x ${img.height} PX`;
                     updateState({});
                 };
                 img.src = e.target.result;
@@ -306,13 +343,12 @@
             const cols = parseInt(state.cols);
             const rows = parseInt(state.rows);
             
-            // 偽隨機偏移函式：根據座標生成穩定偏移
             const getOffset = (seed, i, j) => {
                 const x = Math.sin(seed + i * 137.5 + j * 42.1) * 10000;
-                return (x - Math.floor(x)) - 0.5; // -0.5 to 0.5
+                return (x - Math.floor(x)) - 0.5;
             };
 
-            const wobble = 0.4; // 位移強度
+            const wobble = 0.4;
 
             if (state.mode === 'grid') {
                 for (let i = 1; i < rows; i++) {
@@ -324,38 +360,28 @@
                     targetCtx.beginPath(); targetCtx.moveTo(x, 0); targetCtx.lineTo(x, h); targetCtx.stroke();
                 }
             } else {
-                // 隨機斜線：生成一個擾動的網格點陣列
                 const points = [];
                 for (let j = 0; j <= rows; j++) {
                     points[j] = [];
                     for (let i = 0; i <= cols; i++) {
                         let px = (w / cols) * i;
                         let py = (h / rows) * j;
-                        
-                        // 非邊緣點才進行擾動
                         if (i > 0 && i < cols) px += getOffset(state.seed, i, j) * (w / cols) * wobble;
                         if (j > 0 && j < rows) py += getOffset(state.seed + 1, i, j) * (h / rows) * wobble;
-                        
                         points[j][i] = { x: px, y: py };
                     }
                 }
 
-                // 繪製橫向擾動線
                 for (let j = 1; j < rows; j++) {
                     targetCtx.beginPath();
                     targetCtx.moveTo(points[j][0].x, points[j][0].y);
-                    for (let i = 1; i <= cols; i++) {
-                        targetCtx.lineTo(points[j][i].x, points[j][i].y);
-                    }
+                    for (let i = 1; i <= cols; i++) targetCtx.lineTo(points[j][i].x, points[j][i].y);
                     targetCtx.stroke();
                 }
-                // 繪製縱向擾動線
                 for (let i = 1; i < cols; i++) {
                     targetCtx.beginPath();
                     targetCtx.moveTo(points[0][i].x, points[0][i].y);
-                    for (let j = 1; j <= rows; j++) {
-                        targetCtx.lineTo(points[j][i].x, points[j][i].y);
-                    }
+                    for (let j = 1; j <= rows; j++) targetCtx.lineTo(points[j][i].x, points[j][i].y);
                     targetCtx.stroke();
                 }
             }
@@ -364,23 +390,28 @@
         function draw() {
             if (!state.image) return;
             const img = state.image;
-            canvas.width = img.width;
-            canvas.height = img.height;
+            
+            // 根據旋轉計算畫布大小
+            const isVerticalRotation = state.rotation === 90 || state.rotation === 270;
+            canvas.width = isVerticalRotation ? img.height : img.width;
+            canvas.height = isVerticalRotation ? img.width : img.height;
+            
+            document.getElementById('info-res').innerText = `${canvas.width} x ${canvas.height} PX`;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             if (state.previewPage === 1) {
                 // 頁 1：拼圖預覽
-                ctx.drawImage(img, 0, 0);
+                ctx.save();
+                ctx.translate(canvas.width / 2, canvas.height / 2);
+                ctx.rotate((state.rotation * Math.PI) / 180);
+                ctx.drawImage(img, -img.width / 2, -img.height / 2);
+                ctx.restore();
                 drawLines(ctx, canvas.width, canvas.height);
             } else {
-                // 頁 2：輔助底圖 (白色背景)
+                // 頁 2：輔助底圖
                 ctx.fillStyle = "#ffffff";
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // 淺灰色切割線
                 drawLines(ctx, canvas.width, canvas.height, "#cccccc");
-                
-                // 黑色邊框
                 ctx.strokeStyle = "#000000";
                 ctx.lineWidth = Math.max(state.thickness, 2.5); 
                 ctx.strokeRect(0, 0, canvas.width, canvas.height);
@@ -390,21 +421,32 @@
         async function exportPDF() {
             if (!state.image) return;
             
-            const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-            const pageWidth = 210;
-            const pageHeight = 297;
+            // 建立 PDF，指定方向
+            const pdf = new jsPDF({ 
+                orientation: state.pdfOrientation, 
+                unit: 'mm', 
+                format: 'a4' 
+            });
+
+            const isLand = state.pdfOrientation === 'l';
+            const pageWidth = isLand ? 297 : 210;
+            const pageHeight = isLand ? 210 : 297;
             const margin = 12;
             const contentWidth = pageWidth - (margin * 2);
+            const contentHeight = pageHeight - (margin * 2);
             
-            const img = state.image;
-            const ratio = img.width / img.height;
+            const isVerticalRotation = state.rotation === 90 || state.rotation === 270;
+            const currentW = isVerticalRotation ? state.image.height : state.image.width;
+            const currentH = isVerticalRotation ? state.image.width : state.image.height;
+            
+            const ratio = currentW / currentH;
             let drawW, drawH;
 
-            if (ratio > contentWidth / (pageHeight - margin * 2)) {
+            if (ratio > contentWidth / contentHeight) {
                 drawW = contentWidth;
                 drawH = contentWidth / ratio;
             } else {
-                drawH = pageHeight - margin * 2;
+                drawH = contentHeight;
                 drawW = drawH * ratio;
             }
 
@@ -413,20 +455,24 @@
 
             const renderPageToImg = (type) => {
                 const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = img.width;
-                tempCanvas.height = img.height;
+                tempCanvas.width = currentW;
+                tempCanvas.height = currentH;
                 const tCtx = tempCanvas.getContext('2d');
                 
                 if(type === 1) {
-                    tCtx.drawImage(img, 0, 0);
-                    drawLines(tCtx, img.width, img.height);
+                    tCtx.save();
+                    tCtx.translate(currentW / 2, currentH / 2);
+                    tCtx.rotate((state.rotation * Math.PI) / 180);
+                    tCtx.drawImage(state.image, -state.image.width / 2, -state.image.height / 2);
+                    tCtx.restore();
+                    drawLines(tCtx, currentW, currentH);
                 } else {
                     tCtx.fillStyle = "#ffffff";
-                    tCtx.fillRect(0, 0, img.width, img.height);
-                    drawLines(tCtx, img.width, img.height, "#cccccc");
+                    tCtx.fillRect(0, 0, currentW, currentH);
+                    drawLines(tCtx, currentW, currentH, "#cccccc");
                     tCtx.strokeStyle = "#000000";
                     tCtx.lineWidth = Math.max(state.thickness, 2.5);
-                    tCtx.strokeRect(0, 0, img.width, img.height);
+                    tCtx.strokeRect(0, 0, currentW, currentH);
                 }
                 return tempCanvas.toDataURL('image/jpeg', 0.95);
             };
@@ -458,7 +504,6 @@
             pdf.save(`puzzle-maker-${Date.now()}.pdf`);
         }
 
-        // 拖放支援
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('border-blue-500', 'bg-blue-50'); };
         dropZone.ondragleave = () => { dropZone.classList.remove('border-blue-500', 'bg-blue-50'); };
         dropZone.ondrop = (e) => {
