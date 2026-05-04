@@ -120,14 +120,14 @@
                                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">橫向片數</label>
                                     <span id="label-cols" class="text-sm font-bold text-blue-600">4</span>
                                 </div>
-                                <input type="range" min="2" max="25" value="4" oninput="updateState({cols: this.value})" class="w-full">
+                                <input type="range" min="2" max="10" value="4" oninput="updateState({cols: this.value})" class="w-full">
                             </div>
                             <div>
                                 <div class="flex justify-between items-end mb-2">
                                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">縱向片數</label>
                                     <span id="label-rows" class="text-sm font-bold text-blue-600">4</span>
                                 </div>
-                                <input type="range" min="2" max="25" value="4" oninput="updateState({rows: this.value})" class="w-full">
+                                <input type="range" min="2" max="10" value="4" oninput="updateState({rows: this.value})" class="w-full">
                             </div>
                         </div>
                         <button onclick="state.seed = Math.random(); draw();" class="w-full py-2 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition uppercase tracking-widest">重新隨機路徑</button>
